@@ -116,7 +116,7 @@ class DeviceProfileBuilder(
                 type = DlnaProfileType.VIDEO,
                 container = "ts",
                 videoCodec = tsVideoCodecs,
-                audioCodec = "mp1,mp2,mp3,aac,ac3,eac3,dts,mlp,truehd",
+                audioCodec = "aac",
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
             ),
