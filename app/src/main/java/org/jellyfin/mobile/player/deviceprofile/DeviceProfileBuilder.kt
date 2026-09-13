@@ -396,13 +396,24 @@ class DeviceProfileBuilder(
     }
 }
 
+/**
+ * isHardwareAccelerated()/isSoftwareOnly() require API 29. Below that, this mirrors the decoder-name
+ * heuristic androidx.media3's MediaCodecUtil.isSoftwareOnly() already uses for the same API gap
+ * (this app ships media3, so classification here matches what it already uses for playback), minus
+ * its audio-only special case since this is only ever consulted for video decoders in this file.
+ */
 private fun MediaCodecInfo.isHardwareDecoder(): Boolean {
     if (isEncoder) return false
-    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        isHardwareAccelerated && !isSoftwareOnly
-    } else {
-        // isHardwareAccelerated()/isSoftwareOnly() require API 29; approximate by name below that.
-        val name = name.lowercase()
-        !name.startsWith("omx.google.") && !name.startsWith("c2.android.")
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        return isHardwareAccelerated && !isSoftwareOnly
     }
+    val name = name.lowercase()
+    val softwareOnly = name.startsWith("omx.google.") ||
+        name.startsWith("omx.ffmpeg.") ||
+        (name.startsWith("omx.sec.") && name.contains(".sw.")) ||
+        name == "omx.qcom.video.decoder.hevcswvdec" ||
+        name.startsWith("c2.android.") ||
+        name.startsWith("c2.google.") ||
+        (!name.startsWith("omx.") && !name.startsWith("c2."))
+    return !softwareOnly
 }
