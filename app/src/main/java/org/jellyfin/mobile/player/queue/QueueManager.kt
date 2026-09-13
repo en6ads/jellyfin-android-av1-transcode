@@ -49,7 +49,6 @@ class QueueManager(
     private val mediaSourceResolver: MediaSourceResolver by inject()
     private val deviceProfileBuilder: DeviceProfileBuilder by inject()
     private val downloadDao: DownloadDao by inject()
-    private val deviceProfile = deviceProfileBuilder.getDeviceProfile()
 
     private var currentQueue: List<UUID> = emptyList()
     private var currentQueueIndex: Int = 0
@@ -163,6 +162,13 @@ class QueueManager(
         enableDirectPlay: Boolean? = null,
         enableDirectStream: Boolean? = null,
     ): PlayerException? {
+        // Built per-request (not cached) so the transcoding profile's lossless-audio-copy
+        // threshold reflects the bitrate ceiling actually in effect for this playback.
+        val deviceProfile = when (maxStreamingBitrate) {
+            null -> deviceProfileBuilder.getDeviceProfile()
+            else -> deviceProfileBuilder.getDeviceProfile(maxStreamingBitrate)
+        }
+
         mediaSourceResolver.resolveMediaSource(
             itemId = itemId,
             mediaSourceId = mediaSourceId,

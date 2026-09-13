@@ -34,8 +34,6 @@ class DeviceProfileBuilder(
     private val maxAvcRawLevel: Int
     private val hardwareVideoCodecs: Set<String>
 
-    private val transcodingProfiles: List<TranscodingProfile>
-
     init {
         require(
             SUPPORTED_CONTAINER_FORMATS.size == AVAILABLE_VIDEO_CODECS.size && SUPPORTED_CONTAINER_FORMATS.size == AVAILABLE_AUDIO_CODECS.size,
@@ -97,18 +95,32 @@ class DeviceProfileBuilder(
             }.toTypedArray()
         }
         videoCodecsProfiles = videoCodecs.entries.associate { (k, v) -> k to v.profiles }
+    }
 
+    /**
+     * Build a transcode-target audio codec list gated by the client's own bitrate ceiling.
+     *
+     * FFmpeg can remux a lossless source track (AC-3/E-AC-3/DTS/MLP/TrueHD/FLAC) into the
+     * transcoded output without re-encoding it, but those codecs carry a much higher bitrate
+     * than AAC. When the client's streaming bitrate ceiling is at or above
+     * [LOSSLESS_AUDIO_MIN_BITRATE] there is enough budget to let that happen; otherwise only
+     * AAC is advertised so a low-bitrate cap isn't blown by an audio track alone.
+     */
+    private fun transcodeAudioCodecs(maxBitrate: Int, copyCodecs: String): String =
+        if (maxBitrate >= LOSSLESS_AUDIO_MIN_BITRATE) copyCodecs else TRANSCODE_AUDIO_EFFICIENT
+
+    private fun buildTranscodingProfiles(maxBitrate: Int): List<TranscodingProfile> {
         // fMP4 HLS can carry AV1/HEVC; MPEG-TS/MKV are the compatibility paths. Modern codecs
         // are only offered as encode targets when a hardware decoder exists for them.
         val fmp4VideoCodecs = transcodeVideoCodecs("av1", "hevc", "h264")
         val tsVideoCodecs = transcodeVideoCodecs("hevc", "h264")
 
-        transcodingProfiles = listOf(
+        return listOf(
             TranscodingProfile(
                 type = DlnaProfileType.VIDEO,
                 container = "mp4",
                 videoCodec = fmp4VideoCodecs,
-                audioCodec = "aac",
+                audioCodec = transcodeAudioCodecs(maxBitrate, MP4_AUDIO_CODECS_COPY),
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
             ),
@@ -116,7 +128,7 @@ class DeviceProfileBuilder(
                 type = DlnaProfileType.VIDEO,
                 container = "ts",
                 videoCodec = tsVideoCodecs,
-                audioCodec = "aac",
+                audioCodec = transcodeAudioCodecs(maxBitrate, TS_AUDIO_CODECS_COPY),
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
             ),
@@ -157,7 +169,7 @@ class DeviceProfileBuilder(
         return selected.joinToString(",")
     }
 
-    fun getDeviceProfile(): DeviceProfile {
+    fun getDeviceProfile(maxBitrate: Int = MAX_STREAMING_BITRATE): DeviceProfile {
         val containerProfiles = ArrayList<ContainerProfile>()
         val directPlayProfiles = ArrayList<DirectPlayProfile>()
         val codecProfiles = ArrayList<CodecProfile>()
@@ -204,12 +216,12 @@ class DeviceProfileBuilder(
         return DeviceProfile(
             name = Constants.APP_INFO_NAME,
             directPlayProfiles = directPlayProfiles,
-            transcodingProfiles = transcodingProfiles,
+            transcodingProfiles = buildTranscodingProfiles(maxBitrate),
             containerProfiles = containerProfiles,
             codecProfiles = codecProfiles,
             subtitleProfiles = subtitleProfiles,
-            maxStreamingBitrate = MAX_STREAMING_BITRATE,
-            maxStaticBitrate = MAX_STATIC_BITRATE,
+            maxStreamingBitrate = maxBitrate,
+            maxStaticBitrate = maxBitrate.coerceAtMost(MAX_STATIC_BITRATE),
             musicStreamingTranscodingBitrate = MAX_MUSIC_TRANSCODING_BITRATE,
         )
     }
@@ -277,6 +289,15 @@ class DeviceProfileBuilder(
     companion object {
         private const val EXTERNAL_PLAYER_PROFILE_NAME = Constants.APP_INFO_NAME + " External Player"
         private const val DEFAULT_H264_MAX_LEVEL = "41"
+
+        /**
+         * Minimum client streaming bitrate ceiling, in bits per second, at which a lossless
+         * audio track is allowed to be copied instead of transcoded to AAC.
+         */
+        private const val LOSSLESS_AUDIO_MIN_BITRATE = 25_000_000 // 25 Mbps
+        private const val TRANSCODE_AUDIO_EFFICIENT = "aac"
+        private const val TS_AUDIO_CODECS_COPY = "mp1,mp2,mp3,$TRANSCODE_AUDIO_EFFICIENT,ac3,eac3,dts,mlp,truehd"
+        private const val MP4_AUDIO_CODECS_COPY = "$TRANSCODE_AUDIO_EFFICIENT,ac3,eac3,dts,mlp,truehd,flac"
 
         /**
          * List of container formats supported by ExoPlayer
