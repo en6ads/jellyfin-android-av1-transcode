@@ -1,7 +1,9 @@
 package org.jellyfin.mobile.player.deviceprofile
 
+import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaFormat
+import android.os.Build
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.jellyfin.mobile.app.AppPreferences
@@ -30,6 +32,7 @@ class DeviceProfileBuilder(
     private val supportedAudioCodecs: Array<Array<String>>
     private val videoCodecsProfiles: Map<String, Set<String>>
     private val maxAvcRawLevel: Int
+    private val hardwareVideoCodecs: Set<String>
 
     private val transcodingProfiles: List<TranscodingProfile>
 
@@ -41,10 +44,13 @@ class DeviceProfileBuilder(
         // Load Android-supported codecs
         val videoCodecs: MutableMap<String, DeviceCodec.Video> = HashMap()
         val audioCodecs: MutableMap<String, DeviceCodec.Audio> = HashMap()
+        val hardwareVideo = HashSet<String>()
         var maxAvcLevel = 0
         val androidCodecs = MediaCodecList(MediaCodecList.REGULAR_CODECS)
         for (codecInfo in androidCodecs.codecInfos) {
             if (codecInfo.isEncoder) continue
+
+            val hardwareDecoder = codecInfo.isHardwareDecoder()
 
             for (mimeType in codecInfo.supportedTypes) {
                 val capabilities = codecInfo.getCapabilitiesForType(mimeType)
@@ -59,6 +65,7 @@ class DeviceProfileBuilder(
                 val name = codec.name
                 when (codec) {
                     is DeviceCodec.Video -> {
+                        if (hardwareDecoder) hardwareVideo += name
                         if (videoCodecs.containsKey(name)) {
                             videoCodecs[name] = videoCodecs[name]!!.mergeCodec(codec)
                         } else {
@@ -76,6 +83,7 @@ class DeviceProfileBuilder(
             }
         }
         maxAvcRawLevel = maxAvcLevel
+        hardwareVideoCodecs = hardwareVideo
 
         // Build map of supported codecs from device support and hardcoded data
         supportedVideoCodecs = Array(AVAILABLE_VIDEO_CODECS.size) { i ->
@@ -90,11 +98,24 @@ class DeviceProfileBuilder(
         }
         videoCodecsProfiles = videoCodecs.entries.associate { (k, v) -> k to v.profiles }
 
+        // fMP4 HLS can carry AV1/HEVC; MPEG-TS/MKV are the compatibility paths. Modern codecs
+        // are only offered as encode targets when a hardware decoder exists for them.
+        val fmp4VideoCodecs = transcodeVideoCodecs("av1", "hevc", "h264")
+        val tsVideoCodecs = transcodeVideoCodecs("hevc", "h264")
+
         transcodingProfiles = listOf(
             TranscodingProfile(
                 type = DlnaProfileType.VIDEO,
+                container = "mp4",
+                videoCodec = fmp4VideoCodecs,
+                audioCodec = "aac",
+                protocol = MediaStreamProtocol.HLS,
+                conditions = emptyList(),
+            ),
+            TranscodingProfile(
+                type = DlnaProfileType.VIDEO,
                 container = "ts",
-                videoCodec = "h264",
+                videoCodec = tsVideoCodecs,
                 audioCodec = "mp1,mp2,mp3,aac,ac3,eac3,dts,mlp,truehd",
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
@@ -102,7 +123,7 @@ class DeviceProfileBuilder(
             TranscodingProfile(
                 type = DlnaProfileType.VIDEO,
                 container = "mkv",
-                videoCodec = "h264",
+                videoCodec = tsVideoCodecs,
                 audioCodec = AVAILABLE_AUDIO_CODECS[SUPPORTED_CONTAINER_FORMATS.indexOf("mkv")].joinToString(","),
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
@@ -116,6 +137,24 @@ class DeviceProfileBuilder(
                 conditions = emptyList(),
             ),
         )
+    }
+
+    /**
+     * Build a comma-separated transcode target list.
+     * Codecs other than H.264 are included only when a hardware decoder is present, so an
+     * encode target the device can only decode in software isn't advertised. H.264 is always
+     * appended last so older devices without any of the [preferred] hardware decoders keep a
+     * working fallback.
+     */
+    private fun transcodeVideoCodecs(vararg preferred: String): String {
+        val selected = ArrayList<String>(preferred.size)
+        for (codec in preferred) {
+            if (codec == "h264" || codec in hardwareVideoCodecs) {
+                if (codec !in selected) selected += codec
+            }
+        }
+        if ("h264" !in selected) selected += "h264"
+        return selected.joinToString(",")
     }
 
     fun getDeviceProfile(): DeviceProfile {
@@ -354,5 +393,16 @@ class DeviceProfileBuilder(
          * https://github.com/jellyfin/jellyfin-web/blob/de690740f03c0568ba3061c4c586bd78b375d882/src/scripts/browserDeviceProfile.js#L373
          */
         private const val MAX_MUSIC_TRANSCODING_BITRATE = 384000
+    }
+}
+
+private fun MediaCodecInfo.isHardwareDecoder(): Boolean {
+    if (isEncoder) return false
+    return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        isHardwareAccelerated && !isSoftwareOnly
+    } else {
+        // isHardwareAccelerated()/isSoftwareOnly() require API 29; approximate by name below that.
+        val name = name.lowercase()
+        !name.startsWith("omx.google.") && !name.startsWith("c2.android.")
     }
 }
