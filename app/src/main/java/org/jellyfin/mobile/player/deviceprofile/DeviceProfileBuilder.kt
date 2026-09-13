@@ -235,6 +235,21 @@ class DeviceProfileBuilder(
                     value = profilesSet.joinToString("|"),
                     isRequired = false,
                 ),
+                // Dolby Vision Profile 7 (dual-layer, base + enhancement) isn't something a plain
+                // HEVC decoder can handle directly - excluding it forces a real transcode instead
+                // of an unsafe direct-stream copy that would otherwise produce a black screen.
+                ProfileCondition(
+                    condition = ProfileConditionType.NOT_EQUALS,
+                    property = ProfileConditionValue.VIDEO_RANGE_TYPE,
+                    value = "DOVIWithEL",
+                    isRequired = false,
+                ),
+                ProfileCondition(
+                    condition = ProfileConditionType.NOT_EQUALS,
+                    property = ProfileConditionValue.VIDEO_RANGE_TYPE,
+                    value = "DOVIWithELHDR10Plus",
+                    isRequired = false,
+                ),
             ),
         )
     }
