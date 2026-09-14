@@ -307,7 +307,21 @@ class DeviceProfileBuilder(
          */
         private const val LOSSLESS_AUDIO_MIN_BITRATE = 25_000_000 // 25 Mbps
         private const val TRANSCODE_AUDIO_EFFICIENT = "aac"
-        private const val TS_AUDIO_CODECS_COPY = "mp1,mp2,mp3,$TRANSCODE_AUDIO_EFFICIENT,ac3,eac3,dts,mlp,truehd"
+
+        /**
+         * Must only contain codecs the server's own HLS ts audio allowlist actually permits
+         * (StreamBuilder's _supportedHlsAudioCodecsTs = aac/ac3/eac3/mp3). Declaring anything
+         * beyond that (mp1/mp2/dts/mlp/truehd) doesn't just fail to help - it actively harms
+         * ranking: the server's profile-selection step reads this raw list and awards an "exact
+         * codec match" rank to whichever codec's name it finds here, with no awareness that a
+         * later, separate step will filter that same codec back out before building the ffmpeg
+         * command. Confirmed on real hardware: with truehd/mlp/dts left in this list, a TrueHD
+         * source got ranked as a false "exact match" on ts and won the ranking outright over mp4
+         * (which honestly reports no match, since mp4's own list doesn't claim truehd) - only for
+         * the ts audio allowlist to then strip truehd back out anyway, landing on a worse result
+         * (MP3, AV1 lost) than mp4's honest fallback (AAC, AV1 kept) would have given.
+         */
+        private const val TS_AUDIO_CODECS_COPY = "$TRANSCODE_AUDIO_EFFICIENT,ac3,eac3,mp3"
 
         /**
          * The server's own HLS mp4 audio allowlist (StreamBuilder's _supportedHlsAudioCodecsMp4)
