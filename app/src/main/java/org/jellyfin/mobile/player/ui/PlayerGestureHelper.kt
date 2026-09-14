@@ -59,6 +59,13 @@ class PlayerGestureHelper(
     private var isZoomEnabled = false
 
     /**
+     * True once the user has pinch-zoomed during the current item's playback. While set,
+     * [applyAutoZoom] must leave [isZoomEnabled] alone so it doesn't fight the user's choice;
+     * it's cleared again in [resetAutoZoom] when a new item starts.
+     */
+    private var hasManualZoomOverride = false
+
+    /**
      * Tracks a value during a swipe gesture (between multiple onScroll calls).
      * When the gesture starts it's reset to an initial value and gets increased or decreased
      * (depending on the direction) as the gesture progresses.
@@ -381,6 +388,7 @@ class PlayerGestureHelper(
             override fun onScale(detector: ScaleGestureDetector): Boolean {
                 val scaleFactor = detector.scaleFactor
                 if (abs(scaleFactor - Constants.ZOOM_SCALE_BASE) > Constants.ZOOM_SCALE_THRESHOLD) {
+                    hasManualZoomOverride = true
                     isZoomEnabled = scaleFactor > 1
                     updateZoomMode(isZoomEnabled)
                 }
@@ -445,6 +453,30 @@ class PlayerGestureHelper(
 
     fun handleConfiguration(newConfig: Configuration) {
         updateZoomMode(fragment.isLandscape(newConfig) && isZoomEnabled)
+    }
+
+    /**
+     * Resets auto-zoom state for a newly started media item, clearing any manual pinch-zoom
+     * override left over from the previous item and turning zoom back off until the new
+     * item's own aspect ratio is evaluated.
+     */
+    fun resetAutoZoom() {
+        hasManualZoomOverride = false
+        isZoomEnabled = false
+        updateZoomMode(false)
+    }
+
+    /**
+     * Automatically enables or disables zoom based on the currently decoded video's aspect
+     * ratio, unless the user has already pinch-zoomed during this item (see [hasManualZoomOverride]).
+     * Called both once at playback start (from the source's reported dimensions) and on every
+     * subsequent ExoPlayer video-size-changed event, so a mid-title aspect ratio change (e.g.
+     * an IMAX release switching between open-matte and scope segments) is picked up too.
+     */
+    fun applyAutoZoom(aspectRatio: Float) {
+        if (hasManualZoomOverride) return
+        isZoomEnabled = aspectRatio >= Constants.AUTO_ZOOM_ASPECT_RATIO_THRESHOLD
+        updateZoomMode(fragment.isLandscape() && isZoomEnabled)
     }
 
     private fun updateZoomMode(enabled: Boolean) {

@@ -134,6 +134,12 @@ object Constants {
      * (which uses it to decide whether to steer audio-track selection towards an already-efficient track).
      */
     const val LOSSLESS_AUDIO_MIN_BITRATE = 25_000_000 // 25 Mbps
+
+    /**
+     * Video aspect ratio (width/height) at or above which auto-zoom kicks in by default,
+     * cropping the letterboxing a scope-ish source would otherwise show on a ~16:9 screen.
+     */
+    const val AUTO_ZOOM_ASPECT_RATIO_THRESHOLD = 2f
     val ASPECT_RATIO_16_9 = Rational(16, 9)
     val PIP_MIN_RATIONAL = Rational(100, 239)
     val PIP_MAX_RATIONAL = Rational(239, 100)
