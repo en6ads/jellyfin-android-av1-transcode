@@ -49,6 +49,14 @@ sealed class JellyfinMediaSource(
         // If the default should be played, it would be explicitly set above
         get() = selectedSubtitleStream?.index ?: -1
 
+    /**
+     * True when [selectedAudioStream] was steered by [findPreferredEfficientAudioTrack] rather
+     * than picked explicitly by the user (or left at the file's own default). QueueManager uses
+     * this to decide whether a later restart (e.g. a bitrate change) should carry the selection
+     * forward as-is or let it be re-evaluated from scratch for the new conditions.
+     */
+    var isAudioTrackAutoSelected: Boolean = false
+
     init {
         // Classify MediaStreams
         val audio = ArrayList<MediaStream>()
@@ -120,12 +128,18 @@ sealed class JellyfinMediaSource(
     }
 
     /**
-     * When [maxBitrate] is capped below [Constants.LOSSLESS_AUDIO_MIN_BITRATE], the transcoding
-     * profile only advertises "aac,eac3" as a copy target (see DeviceProfileBuilder's
-     * LOW_BITRATE_AUDIO_COPY) - so a lossless track like TrueHD/DTS-HD MA would be transcoded
-     * down to plain AAC anyway, discarding any spatial mix. If the source also has an
-     * already-efficient lossy track, switching to it up front lets the server copy it losslessly
-     * instead, preferring an EAC3/JOC track (spatial audio) over a plain one when both exist.
+     * A lossless track (TrueHD/DTS-HD MA) never actually survives as lossless in two cases, so
+     * picking an already-efficient track instead - preferring EAC3/JOC (spatial audio) over a
+     * plain one when both exist - loses nothing and avoids a pointless lossy re-encode of a
+     * lossless source:
+     *
+     * 1. [maxBitrate] is capped below [Constants.LOSSLESS_AUDIO_MIN_BITRATE]: the transcoding
+     *    profile only advertises "aac,eac3" as a copy target then (DeviceProfileBuilder's
+     *    LOW_BITRATE_AUDIO_COPY), so a lossless track gets crushed to bare AAC regardless.
+     * 2. The video is Dolby Vision Profile 7: confirmed on real hardware that such sources get
+     *    excluded onto the ts/mkv HLS path, and TS_AUDIO_CODECS_COPY has no lossless entries
+     *    either (nor does mp4's own list include TrueHD) - so a lossless default is crushed to
+     *    AAC there too, regardless of the bitrate cap.
      *
      * Returns the stream to switch to, or null if [selectedAudioStream] is already fine as-is.
      * A pure query, not a mutation: for [org.jellyfin.sdk.model.api.PlayMethod.TRANSCODE], the
@@ -133,8 +147,11 @@ sealed class JellyfinMediaSource(
      * merely reassigning [selectedAudioStream] here would be silently ignored - the caller must
      * re-resolve the media source with this stream's index to actually take effect.
      */
-    fun findPreferredLowBitrateAudioTrack(maxBitrate: Int?): MediaStream? {
-        if (maxBitrate == null || maxBitrate >= Constants.LOSSLESS_AUDIO_MIN_BITRATE) return null
+    fun findPreferredEfficientAudioTrack(maxBitrate: Int?): MediaStream? {
+        val isBitrateCapped = maxBitrate != null && maxBitrate < Constants.LOSSLESS_AUDIO_MIN_BITRATE
+        val isDolbyVisionProfile7 = selectedVideoStream?.dvProfile == DOLBY_VISION_PROFILE_7
+        if (!isBitrateCapped && !isDolbyVisionProfile7) return null
+
         val current = selectedAudioStream ?: return null
         if (current.codec?.lowercase() in EFFICIENT_LOSSY_AUDIO_CODECS) return null
 
@@ -224,6 +241,8 @@ sealed class JellyfinMediaSource(
          * matches DeviceProfileBuilder's own audio-copy allowlists (aac/ac3/eac3/mp3).
          */
         val EFFICIENT_LOSSY_AUDIO_CODECS = setOf("aac", "ac3", "eac3", "mp3")
+
+        private const val DOLBY_VISION_PROFILE_7 = 7
     }
 }
 

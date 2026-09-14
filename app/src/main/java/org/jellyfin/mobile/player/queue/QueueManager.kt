@@ -161,6 +161,7 @@ class QueueManager(
         playWhenReady: Boolean = true,
         enableDirectPlay: Boolean? = null,
         enableDirectStream: Boolean? = null,
+        isAudioTrackAutoSelected: Boolean = false,
     ): PlayerException? {
         // Built per-request (not cached) so the transcoding profile's lossless-audio-copy
         // threshold reflects the bitrate ceiling actually in effect for this playback.
@@ -186,7 +187,7 @@ class QueueManager(
             // other transcoding audio-track switch (see selectAudioStreamAndRestartPlayback).
             // Only steer the default selection, never override an explicit user pick.
             val preferredTrack = if (audioStreamIndex == null && jellyfinMediaSource.playMethod == PlayMethod.TRANSCODE) {
-                jellyfinMediaSource.findPreferredLowBitrateAudioTrack(maxStreamingBitrate)
+                jellyfinMediaSource.findPreferredEfficientAudioTrack(maxStreamingBitrate)
             } else {
                 null
             }
@@ -201,8 +202,10 @@ class QueueManager(
                     playWhenReady = playWhenReady,
                     enableDirectPlay = enableDirectPlay,
                     enableDirectStream = enableDirectStream,
+                    isAudioTrackAutoSelected = true,
                 )
             }
+            jellyfinMediaSource.isAudioTrackAutoSelected = isAudioTrackAutoSelected
 
             // Ensure transcoding of the current element is stopped
             getCurrentMediaSourceOrNull()?.let { oldMediaSource ->
@@ -281,6 +284,7 @@ class QueueManager(
             playWhenReady = true,
             enableDirectPlay = if (playbackRetries > 1) false else null,
             enableDirectStream = if (playbackRetries > 2) false else null,
+            isAudioTrackAutoSelected = currentMediaSource.isAudioTrackAutoSelected,
         ) == null
     }
 
@@ -295,12 +299,19 @@ class QueueManager(
 
         val currentPlayState = viewModel.getStateAndPause() ?: return false
 
+        // If the current track was auto-picked for the OLD bitrate cap (not an explicit user
+        // choice), don't carry it forward as if it were one - let the new cap's own resolve
+        // re-decide from the file's own default, so e.g. going back above the lossless
+        // threshold reverts to a lossless track instead of getting stuck on the earlier pick.
+        val audioStreamIndex = currentMediaSource.selectedAudioStreamIndex
+            .takeUnless { currentMediaSource.isAudioTrackAutoSelected }
+
         return startRemotePlayback(
             itemId = currentMediaSource.itemId,
             mediaSourceId = currentMediaSource.id,
             maxStreamingBitrate = bitrate,
             startTime = currentPlayState.position,
-            audioStreamIndex = currentMediaSource.selectedAudioStreamIndex,
+            audioStreamIndex = audioStreamIndex,
             subtitleStreamIndex = currentMediaSource.selectedSubtitleStreamIndex,
             playWhenReady = currentPlayState.playWhenReady,
         ) == null
@@ -525,6 +536,7 @@ class QueueManager(
                 audioStreamIndex = mediaSource.selectedAudioStreamIndex,
                 subtitleStreamIndex = stream?.index ?: -1, // -1 disables subtitles, null would select the default subtitle
                 playWhenReady = currentPlayState.playWhenReady,
+                isAudioTrackAutoSelected = mediaSource.isAudioTrackAutoSelected,
             )
             null -> return false
         }
