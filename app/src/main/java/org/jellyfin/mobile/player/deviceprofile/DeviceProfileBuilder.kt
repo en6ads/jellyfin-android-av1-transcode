@@ -265,9 +265,19 @@ class DeviceProfileBuilder(
             return null
         }
 
+        // Confirmed on real hardware: a Profile 7 FEL source landing on the "ts" transcoding
+        // path (buildTranscodingProfiles' container = "ts") slipped past the DOVIWithEL
+        // exclusion below and got classified as a direct "Remux" instead of a forced real
+        // transcode - reproducing the exact black-screen bug this exclusion exists to prevent.
+        // Root cause: this CodecProfile is declared once per SUPPORTED_CONTAINER_FORMATS entry,
+        // which spells the same container "mpegts", not "ts". Whichever container-name string
+        // the server checks CodecProfile.Container against for that path, declaring both covers
+        // it - a mismatch here isn't a soft miss, it's a silent safety-condition bypass.
+        val codecProfileContainer = if (container == "mpegts") "mpegts,ts" else container
+
         return CodecProfile(
             type = CodecType.VIDEO,
-            container = container,
+            container = codecProfileContainer,
             codec = videoCodec,
             applyConditions = listOf(),
             conditions = listOf(
