@@ -131,6 +131,19 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
             // Update title and player menus
             toolbar.title = mediaSource.getName(requireContext())
             playerMenus?.onQueueItemChanged(mediaSource, viewModel.queueManager.hasNext())
+
+            if (::playerGestureHelper.isInitialized) {
+                playerGestureHelper.resetAutoZoom()
+                mediaSource.selectedVideoStream?.aspectRational?.let { aspectRational ->
+                    playerGestureHelper.applyAutoZoom(aspectRational.toFloat())
+                }
+            }
+        }
+        viewModel.videoSize.observe(this) { videoSize ->
+            if (::playerGestureHelper.isInitialized && videoSize.height > 0) {
+                val aspectRatio = videoSize.width * videoSize.pixelWidthHeightRatio / videoSize.height
+                playerGestureHelper.applyAutoZoom(aspectRatio)
+            }
         }
 
         // Handle fragment arguments, extract playback options and start playback

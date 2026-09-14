@@ -16,6 +16,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.VideoSize
 import androidx.media3.common.util.Clock
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -121,9 +122,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
     private val _player = MutableLiveData<ExoPlayer?>()
     private val _playerState = MutableLiveData<Int>()
     private val _decoderType = MutableLiveData<DecoderType>()
+    private val _videoSize = MutableLiveData<VideoSize>()
     val player: LiveData<ExoPlayer?> get() = _player
     val playerState: LiveData<Int> get() = _playerState
     val decoderType: LiveData<DecoderType> get() = _decoderType
+    val videoSize: LiveData<VideoSize> get() = _videoSize
 
     // Player Menus
     private var playerMenuHelper: PlayerMenuHelper? = null
@@ -774,6 +777,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
         super.onPositionDiscontinuity(oldPosition, newPosition, reason)
         playerOrNull?.setWatchedChapterMarkings()
         playerOrNull?.updateSkipMediaSegmentButton()
+    }
+
+    /**
+     * Fires whenever the decoder's actual rendered frame size changes, including mid-title
+     * (e.g. an IMAX release switching between open-matte and scope segments) - unlike the
+     * source's static reported dimensions, this reflects what's really being decoded right now.
+     */
+    override fun onVideoSizeChanged(videoSize: VideoSize) {
+        _videoSize.value = videoSize
     }
 
     override fun onPlayerError(error: PlaybackException) {
