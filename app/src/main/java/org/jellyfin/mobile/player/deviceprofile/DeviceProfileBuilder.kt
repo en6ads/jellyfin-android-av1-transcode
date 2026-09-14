@@ -313,7 +313,16 @@ class DeviceProfileBuilder(
         private const val LOSSLESS_AUDIO_MIN_BITRATE = 25_000_000 // 25 Mbps
         private const val TRANSCODE_AUDIO_EFFICIENT = "aac"
         private const val TS_AUDIO_CODECS_COPY = "mp1,mp2,mp3,$TRANSCODE_AUDIO_EFFICIENT,ac3,eac3,dts,mlp,truehd"
-        private const val MP4_AUDIO_CODECS_COPY = "$TRANSCODE_AUDIO_EFFICIENT,ac3,eac3,dts,mlp,truehd,flac"
+
+        /**
+         * mp4/fMP4 only reliably carries [TRANSCODE_AUDIO_EFFICIENT] and ac3 on this app's own
+         * direct-play compatibility table (AVAILABLE_AUDIO_CODECS for the "mp4" container) -
+         * eac3/dts/mlp/truehd/flac aren't listed there, and copying truehd into it in practice
+         * produces a stream this client's mp4 extractor can't parse ("codec frame size is not
+         * set" from the muxer, and a playback error on device) even though the same audio plays
+         * fine natively inside its original mkv container.
+         */
+        private const val MP4_AUDIO_CODECS_COPY = "$TRANSCODE_AUDIO_EFFICIENT,ac3"
 
         /**
          * List of container formats supported by ExoPlayer
