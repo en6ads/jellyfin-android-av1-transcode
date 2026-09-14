@@ -113,6 +113,21 @@ class DeviceProfileBuilder(
         // fMP4 HLS can carry AV1/HEVC; MPEG-TS/MKV are the compatibility paths. Modern codecs
         // are only offered as encode targets when a hardware decoder exists for them.
         //
+        // IMPORTANT, found the hard way on real hardware: the server uses two DIFFERENT lists
+        // for two DIFFERENT decisions, and they can disagree. (1) Its profile-*ranking* step
+        // (which of mp4/ts/mkv wins) reads the raw audioCodec string declared on each
+        // TranscodingProfile below and awards a container an "exact match" the moment it sees
+        // the source's codec name in that string - full stop, no further checks. (2) Its actual
+        // ffmpeg-command-building step, once a container has already won, separately filters
+        // that same declared list against its own hardcoded per-container HLS audio allowlist
+        // (see TS_AUDIO_CODECS_COPY/MP4_AUDIO_CODECS_COPY below) before deciding what to encode.
+        // Step (1) has no idea step (2) will happen. So if a codec is declared here but isn't in
+        // that container's real allowlist, ranking still credits it as a perfect match - winning
+        // the container the ranking - only for step (2) to silently strip it back out, landing on
+        // whatever's left instead. The fix is to never declare a codec here that the container's
+        // own allowlist would filter out anyway: it can only win a ranking it can't actually
+        // honor, never helps, and actively steals the win from a container that could.
+        //
         // Regardless of what audio codecs this profile declares, the *server* enforces its own
         // hardcoded HLS audio allowlist on top (jellyfin-server, MediaBrowser.Model/Dlna/
         // StreamBuilder.cs), and only special-cases "mp4" - every other HLS container, ts and
