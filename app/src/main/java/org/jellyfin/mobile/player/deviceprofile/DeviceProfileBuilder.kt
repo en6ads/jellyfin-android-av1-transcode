@@ -312,14 +312,20 @@ class DeviceProfileBuilder(
         /**
          * The server's own HLS mp4 audio allowlist (StreamBuilder's _supportedHlsAudioCodecsMp4)
          * permits aac/ac3/eac3/mp3/alac/flac/opus/dts/truehd - anything else in this list is a
-         * no-op there regardless. Of those, dts is confirmed working on real hardware (copied
-         * losslessly into an mp4/AV1 transcode without issue); truehd is excluded because it
-         * produces a stream this client's mp4 extractor can't parse ("codec frame size is not
-         * set" from the muxer, and a playback error on device) even though the same audio plays
-         * fine natively inside its original mkv container and is nominally on the server's list.
-         * mlp isn't in the server's own mp4 allowlist at all, so including it would be a no-op.
+         * no-op there regardless. Of those:
+         * - dts is confirmed working on real hardware (copied losslessly into an mp4/AV1
+         *   transcode without issue).
+         * - eac3 (including E-AC-3 JOC/Atmos) is a standard, well-established codec for fMP4 -
+         *   unlike truehd below, this isn't a rare/edge-case muxing combination - so it's
+         *   included to let mp4 win the ranking over ts for JOC/Atmos sources instead of losing
+         *   AV1 for no reason (ts's own copy list also includes eac3).
+         * - truehd is excluded because it produces a stream this client's mp4 extractor can't
+         *   parse ("codec frame size is not set" from the muxer, and a playback error on
+         *   device) even though the same audio plays fine natively inside its original mkv
+         *   container and is nominally on the server's list.
+         * - mlp isn't in the server's own mp4 allowlist at all, so including it would be a no-op.
          */
-        private const val MP4_AUDIO_CODECS_COPY = "$TRANSCODE_AUDIO_EFFICIENT,ac3,dts"
+        private const val MP4_AUDIO_CODECS_COPY = "$TRANSCODE_AUDIO_EFFICIENT,ac3,eac3,dts"
 
         /**
          * List of container formats supported by ExoPlayer
