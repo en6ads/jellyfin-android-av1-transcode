@@ -113,11 +113,15 @@ class DeviceProfileBuilder(
         // fMP4 HLS can carry AV1/HEVC; MPEG-TS/MKV are the compatibility paths. Modern codecs
         // are only offered as encode targets when a hardware decoder exists for them.
         //
-        // The server's own HLS audio allowlist (StreamBuilder's _supportedHlsAudioCodecsTs)
-        // caps every non-mp4 HLS container - ts and mkv alike - at aac/ac3/eac3/mp3, regardless
-        // of what this profile declares. Only mp4's allowlist includes dts/truehd, so mp4 is the
-        // only container that can carry lossless-ish audio through a real transcode; av1/mkv
-        // would not have actually unlocked more than ts already offers.
+        // Regardless of what audio codecs this profile declares, the *server* enforces its own
+        // hardcoded HLS audio allowlist on top (jellyfin-server, MediaBrowser.Model/Dlna/
+        // StreamBuilder.cs), and only special-cases "mp4" - every other HLS container, ts and
+        // mkv included, falls into the same restrictive list:
+        //   _supportedHlsAudioCodecsTs  = ["aac", "ac3", "eac3", "mp3"]
+        //   _supportedHlsAudioCodecsMp4 = ["aac", "ac3", "eac3", "mp3", "alac", "flac", "opus", "dts", "truehd"]
+        // So mp4 is the only container that can carry lossless-ish audio through a real
+        // transcode at all; offering av1 on mkv was tried and confirmed on real hardware to not
+        // unlock anything beyond what ts already gets, since mkv gets the ts-sized allowlist too.
         val fmp4VideoCodecs = transcodeVideoCodecs("av1", "hevc", "h264")
         val tsVideoCodecs = transcodeVideoCodecs("hevc", "h264")
         val mkvAudioCodecsCopy = AVAILABLE_AUDIO_CODECS[SUPPORTED_CONTAINER_FORMATS.indexOf("mkv")].joinToString(",")
