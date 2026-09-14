@@ -134,6 +134,20 @@ object Constants {
      * (which uses it to decide whether to steer audio-track selection towards an already-efficient track).
      */
     const val LOSSLESS_AUDIO_MIN_BITRATE = 25_000_000 // 25 Mbps
+
+    /**
+     * Audio codecs mp4 can actually copy (not re-encode) once [LOSSLESS_AUDIO_MIN_BITRATE] is
+     * met - matches DeviceProfileBuilder's MP4_AUDIO_CODECS_COPY exactly (single source of
+     * truth, shared with JellyfinMediaSource's own audio-track preference logic).
+     */
+    val MP4_AUDIO_COPY_CODECS = setOf("aac", "ac3", "eac3", "dts")
+
+    /**
+     * Audio codecs mp4 can actually copy below [LOSSLESS_AUDIO_MIN_BITRATE] - matches
+     * DeviceProfileBuilder's LOW_BITRATE_AUDIO_COPY exactly (mp4-only; ts/mkv never offer eac3
+     * as a copy target at any bitrate, see TS_AUDIO_CODECS_COPY).
+     */
+    val MP4_LOW_BITRATE_AUDIO_COPY_CODECS = setOf("aac", "eac3")
     val ASPECT_RATIO_16_9 = Rational(16, 9)
     val PIP_MIN_RATIONAL = Rational(100, 239)
     val PIP_MAX_RATIONAL = Rational(239, 100)
