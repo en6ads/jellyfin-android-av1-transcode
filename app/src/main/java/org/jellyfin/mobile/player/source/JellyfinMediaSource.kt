@@ -128,18 +128,18 @@ sealed class JellyfinMediaSource(
     }
 
     /**
-     * A lossless track (TrueHD/DTS-HD MA) never actually survives as lossless in two cases, so
-     * picking an already-efficient track instead - preferring EAC3/JOC (spatial audio) over a
-     * plain one when both exist - loses nothing and avoids a pointless lossy re-encode of a
-     * lossless source:
+     * When [maxBitrate] is capped below [Constants.LOSSLESS_AUDIO_MIN_BITRATE], the transcoding
+     * profile only advertises "aac,eac3" as a copy target (DeviceProfileBuilder's
+     * LOW_BITRATE_AUDIO_COPY, mp4-only) - so a lossless track like TrueHD/DTS-HD MA would be
+     * transcoded down to plain AAC anyway, discarding any spatial mix. If the source also has an
+     * already-efficient lossy track, switching to it up front lets the server copy it losslessly
+     * instead, preferring an EAC3/JOC track (spatial audio) over a plain one when both exist.
      *
-     * 1. [maxBitrate] is capped below [Constants.LOSSLESS_AUDIO_MIN_BITRATE]: the transcoding
-     *    profile only advertises "aac,eac3" as a copy target then (DeviceProfileBuilder's
-     *    LOW_BITRATE_AUDIO_COPY), so a lossless track gets crushed to bare AAC regardless.
-     * 2. The video is Dolby Vision Profile 7: confirmed on real hardware that such sources get
-     *    excluded onto the ts/mkv HLS path, and TS_AUDIO_CODECS_COPY has no lossless entries
-     *    either (nor does mp4's own list include TrueHD) - so a lossless default is crushed to
-     *    AAC there too, regardless of the bitrate cap.
+     * Deliberately NOT extended to DV Profile 7 sources on the ts/mkv path (which never offers
+     * eac3 as a copy target - see TS_AUDIO_CODECS_COPY): there, EAC3/JOC would still be
+     * re-encoded to AAC, not copied, making it a second lossy generation (source's own lossy
+     * encode, re-encoded again) - very plausibly worse than a single-generation TrueHD-to-AAC
+     * re-encode, not better. This only pays off where a genuine copy is possible.
      *
      * Returns the stream to switch to, or null if [selectedAudioStream] is already fine as-is.
      * A pure query, not a mutation: for [org.jellyfin.sdk.model.api.PlayMethod.TRANSCODE], the
@@ -148,10 +148,7 @@ sealed class JellyfinMediaSource(
      * re-resolve the media source with this stream's index to actually take effect.
      */
     fun findPreferredEfficientAudioTrack(maxBitrate: Int?): MediaStream? {
-        val isBitrateCapped = maxBitrate != null && maxBitrate < Constants.LOSSLESS_AUDIO_MIN_BITRATE
-        val isDolbyVisionProfile7 = selectedVideoStream?.dvProfile == DOLBY_VISION_PROFILE_7
-        if (!isBitrateCapped && !isDolbyVisionProfile7) return null
-
+        if (maxBitrate == null || maxBitrate >= Constants.LOSSLESS_AUDIO_MIN_BITRATE) return null
         val current = selectedAudioStream ?: return null
         if (current.codec?.lowercase() in EFFICIENT_LOSSY_AUDIO_CODECS) return null
 
@@ -241,8 +238,6 @@ sealed class JellyfinMediaSource(
          * matches DeviceProfileBuilder's own audio-copy allowlists (aac/ac3/eac3/mp3).
          */
         val EFFICIENT_LOSSY_AUDIO_CODECS = setOf("aac", "ac3", "eac3", "mp3")
-
-        private const val DOLBY_VISION_PROFILE_7 = 7
     }
 }
 
