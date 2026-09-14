@@ -132,12 +132,33 @@ sealed class JellyfinMediaSource(
     }
 
     /**
-     * When [maxBitrate] is capped below [Constants.LOSSLESS_AUDIO_MIN_BITRATE], the transcoding
-     * profile only advertises "aac,eac3" as a copy target (DeviceProfileBuilder's
-     * LOW_BITRATE_AUDIO_COPY, mp4-only) - so a lossless track like TrueHD/DTS-HD MA would be
-     * transcoded down to plain AAC anyway, discarding any spatial mix. If the source also has an
-     * already-efficient lossy track, switching to it up front lets the server copy it losslessly
-     * instead, preferring an EAC3/JOC track (spatial audio) over a plain one when both exist.
+     * The file's own intended default audio track: the first stream flagged [MediaStream.isDefault],
+     * falling back to the very first audio stream if none are flagged. Confirmed on real hardware
+     * that the server's `DefaultAudioStreamIndex` field comes back null on every request regardless
+     * of bitrate, so it cannot be relied on - and when a source has more than one track flagged
+     * default (seen in practice: both a TrueHD and an EAC3 track both marked default on the same
+     * file), leaving [selectedAudioStream]/`AudioStreamIndex` unset lets the server break that tie
+     * on its own, and it consistently prefers whichever track is cheaper for it to deliver (the
+     * already-efficient EAC3 one) over this app's own intended "quality" default - independent of
+     * bitrate cap, confirmed identical at both 15 Mbps and 40 Mbps. This must be computed and
+     * pinned explicitly by the client instead; never rely on omitting the index to get "the real
+     * default" back.
+     */
+    val fileDefaultAudioStream: MediaStream?
+        get() = audioStreams.firstOrNull { it.isDefault } ?: audioStreams.firstOrNull()
+
+    /**
+     * Resolves which audio track a non-explicit resolve (i.e. not an actual user pick) should
+     * pin for the given [maxBitrate], so the app never depends on the server's own default-track
+     * tie-break (see [fileDefaultAudioStream]). Returns null only if the source has no audio at
+     * all.
+     *
+     * Below [Constants.LOSSLESS_AUDIO_MIN_BITRATE], the transcoding profile only advertises
+     * "aac,eac3" as a copy target (DeviceProfileBuilder's LOW_BITRATE_AUDIO_COPY, mp4-only) - so
+     * a lossless default like TrueHD/DTS-HD MA would be transcoded down to plain AAC anyway,
+     * discarding any spatial mix. If the source also has an already-efficient lossy track,
+     * preferring it instead lets the server copy it losslessly, preferring an EAC3/JOC track
+     * (spatial audio) over a plain one when both exist.
      *
      * Deliberately NOT extended to DV Profile 7 sources on the ts/mkv path (which never offers
      * eac3 as a copy target - see TS_AUDIO_CODECS_COPY): there, EAC3/JOC would still be
@@ -145,22 +166,35 @@ sealed class JellyfinMediaSource(
      * encode, re-encoded again) - very plausibly worse than a single-generation TrueHD-to-AAC
      * re-encode, not better. This only pays off where a genuine copy is possible.
      *
-     * Returns the stream to switch to, or null if [selectedAudioStream] is already fine as-is.
      * A pure query, not a mutation: for [org.jellyfin.sdk.model.api.PlayMethod.TRANSCODE], the
      * server bakes the audio stream choice into `sourceInfo.transcodingUrl` at resolve time, so
      * merely reassigning [selectedAudioStream] here would be silently ignored - the caller must
      * re-resolve the media source with this stream's index to actually take effect.
      */
-    fun findPreferredEfficientAudioTrack(maxBitrate: Int?): MediaStream? {
-        if (maxBitrate == null || maxBitrate >= Constants.LOSSLESS_AUDIO_MIN_BITRATE) return null
-        val current = selectedAudioStream ?: return null
-        if (current.codec?.lowercase() in EFFICIENT_LOSSY_AUDIO_CODECS) return null
+    fun resolveDefaultAudioTrack(maxBitrate: Int?): MediaStream? {
+        val fileDefault = fileDefaultAudioStream ?: return null
+        val isBitrateCapped = maxBitrate != null && maxBitrate < Constants.LOSSLESS_AUDIO_MIN_BITRATE
+        if (!isBitrateCapped || fileDefault.codec?.lowercase() in EFFICIENT_LOSSY_AUDIO_CODECS) return fileDefault
 
         return audioStreams.firstOrNull { stream ->
             stream.codec?.lowercase() == "eac3" && stream.audioSpatialFormat == AudioSpatialFormat.DOLBY_ATMOS
         } ?: audioStreams.firstOrNull { stream ->
             stream.codec?.lowercase() in EFFICIENT_LOSSY_AUDIO_CODECS
-        }
+        } ?: fileDefault
+    }
+
+    /**
+     * Whether a non-explicit resolve actually needs the extra round-trip to pin
+     * [resolveDefaultAudioTrack] explicitly, rather than letting the server pick on its own.
+     * Only true when that would change something: either more than one track is flagged default
+     * (the server's own tie-break is unreliable, per [fileDefaultAudioStream]'s doc), or the
+     * low-bitrate preference actually wants a different track than the file's obvious single
+     * default. Skipping the extra pass otherwise avoids a pointless second PlaybackInfo call and
+     * a discarded partial transcode job on every single playback start.
+     */
+    fun needsExplicitAudioTrackPin(maxBitrate: Int?): Boolean {
+        if (audioStreams.count { it.isDefault } > 1) return true
+        return resolveDefaultAudioTrack(maxBitrate) !== fileDefaultAudioStream
     }
 
     /**
