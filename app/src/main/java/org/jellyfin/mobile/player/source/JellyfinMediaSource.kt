@@ -52,7 +52,7 @@ sealed class JellyfinMediaSource(
     /**
      * True only when [selectedAudioStream] was picked explicitly by the user (via the track
      * menu) - false both for the file's own untouched default AND for a track
-     * [findPreferredEfficientAudioTrack] steered towards. QueueManager uses this to decide
+     * [resolveDefaultAudioTrack] steered towards. QueueManager uses this to decide
      * whether a later restart (e.g. a bitrate change) must carry the selection forward as-is
      * (explicit picks always win) or is free to let it be re-evaluated from scratch for the new
      * conditions - which matters for the untouched-default case too, not just the auto-picked
@@ -159,21 +159,24 @@ sealed class JellyfinMediaSource(
      * happens it's against a ceiling high enough that there's no real re-encode concern to trade
      * against - so there's no reason to prefer anything over this app's own intended default.
      *
-     * For a genuine finite cap, mp4 can only ever *copy* a specific codec set -
-     * [Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS] below [Constants.LOSSLESS_AUDIO_MIN_BITRATE],
-     * [Constants.MP4_AUDIO_COPY_CODECS] at or above it. A default track outside that set (e.g.
-     * TrueHD/DTS-HD MA, which mp4 never offers to copy at any bitrate - see
-     * DeviceProfileBuilder's MP4_AUDIO_CODECS_COPY) gets crushed to plain AAC regardless, so if
-     * the source also has an already-efficient track that mp4 *can* copy, preferring it instead
-     * avoids a pointless re-encode - preferring an EAC3/JOC track (spatial audio) over a plain
-     * one when both exist, since a straight copy preserves it far better than a fresh AAC
-     * re-encode would.
+     * Dolby Vision Profile 7 (dual-layer) sources get the same unconditional pass-through,
+     * regardless of bitrate: confirmed on real hardware that these get excluded onto the ts/mkv
+     * HLS path, and eac3 is never a copy target there (see TS_AUDIO_CODECS_COPY, deliberately
+     * excluded to avoid a confirmed ts/EAC3 decoder crash) - so preferring EAC3/JOC over the
+     * file's own lossless default would still just be re-encoded to AAC, not copied, making it a
+     * second lossy generation (the source's own lossy encode, re-encoded again) instead of a
+     * single-generation TrueHD-to-AAC re-encode. Confirmed worse on real hardware, not better -
+     * this only pays off where a genuine copy is actually possible, which DV7 content never gets.
      *
-     * Deliberately NOT extended to DV Profile 7 sources on the ts/mkv path (which never offers
-     * eac3 as a copy target - see TS_AUDIO_CODECS_COPY): there, EAC3/JOC would still be
-     * re-encoded to AAC, not copied, making it a second lossy generation (source's own lossy
-     * encode, re-encoded again) - very plausibly worse than a single-generation TrueHD-to-AAC
-     * re-encode, not better. This only pays off where a genuine copy is possible.
+     * For everything else with a genuine finite cap, mp4 can only ever *copy* a specific codec
+     * set - [Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS] below
+     * [Constants.LOSSLESS_AUDIO_MIN_BITRATE], [Constants.MP4_AUDIO_COPY_CODECS] at or above it. A
+     * default track outside that set (e.g. TrueHD/DTS-HD MA, which mp4 never offers to copy at
+     * any bitrate - see DeviceProfileBuilder's MP4_AUDIO_CODECS_COPY) gets crushed to plain AAC
+     * regardless, so if the source also has an already-efficient track that mp4 *can* copy,
+     * preferring it instead avoids a pointless re-encode - preferring an EAC3/JOC track (spatial
+     * audio) over a plain one when both exist, since a straight copy preserves it far better than
+     * a fresh AAC re-encode would.
      *
      * A pure query, not a mutation: for [org.jellyfin.sdk.model.api.PlayMethod.TRANSCODE], the
      * server bakes the audio stream choice into `sourceInfo.transcodingUrl` at resolve time, so
@@ -182,7 +185,7 @@ sealed class JellyfinMediaSource(
      */
     fun resolveDefaultAudioTrack(maxBitrate: Int?): MediaStream? {
         val fileDefault = fileDefaultAudioStream ?: return null
-        if (maxBitrate == null) return fileDefault
+        if (maxBitrate == null || selectedVideoStream?.dvProfile == DOLBY_VISION_PROFILE_7) return fileDefault
 
         val isBitrateCapped = maxBitrate < Constants.LOSSLESS_AUDIO_MIN_BITRATE
         val copyEligibleCodecs = if (isBitrateCapped) Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS else Constants.MP4_AUDIO_COPY_CODECS
@@ -280,6 +283,10 @@ sealed class JellyfinMediaSource(
                 }
             }.ifEmpty { null }
         } ?: sourceInfo.name.orEmpty()
+    }
+
+    private companion object {
+        private const val DOLBY_VISION_PROFILE_7 = 7
     }
 }
 
