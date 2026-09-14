@@ -119,8 +119,10 @@ class DeviceProfileBuilder(
         // TranscodingProfile below and awards a container an "exact match" the moment it sees
         // the source's codec name in that string - full stop, no further checks. (2) Its actual
         // ffmpeg-command-building step, once a container has already won, separately filters
-        // that same declared list against its own hardcoded per-container HLS audio allowlist
-        // (see TS_AUDIO_CODECS_COPY/MP4_AUDIO_CODECS_COPY below) before deciding what to encode.
+        // that same declared list against its own hardcoded per-container HLS audio allowlist -
+        // jellyfin-server's StreamBuilder.cs, only special-casing "mp4":
+        //   _supportedHlsAudioCodecsTs  = ["aac", "ac3", "eac3", "mp3"]
+        //   _supportedHlsAudioCodecsMp4 = ["aac", "ac3", "eac3", "mp3", "alac", "flac", "opus", "dts", "truehd"]
         // Step (1) has no idea step (2) will happen. So if a codec is declared here but isn't in
         // that container's real allowlist, ranking still credits it as a perfect match - winning
         // the container the ranking - only for step (2) to silently strip it back out, landing on
@@ -128,19 +130,11 @@ class DeviceProfileBuilder(
         // own allowlist would filter out anyway: it can only win a ranking it can't actually
         // honor, never helps, and actively steals the win from a container that could.
         //
-        // Regardless of what audio codecs this profile declares, the *server* enforces its own
-        // hardcoded HLS audio allowlist on top (jellyfin-server, MediaBrowser.Model/Dlna/
-        // StreamBuilder.cs), and only special-cases "mp4" - every other HLS container, ts and
-        // mkv included, falls into the same restrictive list:
-        //   _supportedHlsAudioCodecsTs  = ["aac", "ac3", "eac3", "mp3"]
-        //   _supportedHlsAudioCodecsMp4 = ["aac", "ac3", "eac3", "mp3", "alac", "flac", "opus", "dts", "truehd"]
-        // So mp4 is the only container that can carry lossless-ish audio through a real
-        // transcode at all; offering av1 on mkv was tried and confirmed on real hardware to not
-        // unlock anything beyond what ts already gets, since mkv gets the ts-sized allowlist too.
-        // For that same reason, mkv's copy list must match ts's exactly rather than mkv's own
-        // (much broader) native/direct-play codec table - declaring more than the real allowlist
-        // permits doesn't just fail to help, it actively misleads the server's ranking step (see
-        // TS_AUDIO_CODECS_COPY's doc comment for why).
+        // Consequence: mp4 is the only container that can carry lossless-ish audio through a
+        // real transcode at all - offering av1 on mkv was tried and confirmed on real hardware to
+        // not unlock anything beyond what ts already gets, since mkv falls into the ts-sized
+        // allowlist too (only "mp4" is special-cased above). So mkv's copy list must match ts's
+        // exactly rather than mkv's own, much broader native/direct-play codec table.
         val fmp4VideoCodecs = transcodeVideoCodecs("av1", "hevc", "h264")
         val tsVideoCodecs = transcodeVideoCodecs("hevc", "h264")
 
