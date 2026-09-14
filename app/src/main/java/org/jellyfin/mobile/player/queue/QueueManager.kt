@@ -180,6 +180,30 @@ class QueueManager(
             enableDirectPlay = enableDirectPlay,
             enableDirectStream = enableDirectStream,
         ).onSuccess { jellyfinMediaSource ->
+            // For a transcode, the server already baked the (default) audio track into
+            // sourceInfo.transcodingUrl by the time this response came back, so switching tracks
+            // now takes a full re-resolve with that track's index made explicit - same as any
+            // other transcoding audio-track switch (see selectAudioStreamAndRestartPlayback).
+            // Only steer the default selection, never override an explicit user pick.
+            val preferredTrack = if (audioStreamIndex == null && jellyfinMediaSource.playMethod == PlayMethod.TRANSCODE) {
+                jellyfinMediaSource.findPreferredLowBitrateAudioTrack(maxStreamingBitrate)
+            } else {
+                null
+            }
+            if (preferredTrack != null) {
+                return startRemotePlayback(
+                    itemId = itemId,
+                    mediaSourceId = jellyfinMediaSource.id,
+                    maxStreamingBitrate = maxStreamingBitrate,
+                    startTime = startTime,
+                    audioStreamIndex = preferredTrack.index,
+                    subtitleStreamIndex = subtitleStreamIndex,
+                    playWhenReady = playWhenReady,
+                    enableDirectPlay = enableDirectPlay,
+                    enableDirectStream = enableDirectStream,
+                )
+            }
+
             // Ensure transcoding of the current element is stopped
             getCurrentMediaSourceOrNull()?.let { oldMediaSource ->
                 viewModel.stopTranscoding(oldMediaSource as RemoteJellyfinMediaSource)

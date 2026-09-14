@@ -4,6 +4,7 @@ import android.content.Context
 import org.jellyfin.mobile.R
 import org.jellyfin.mobile.player.deviceprofile.CodecHelpers
 import org.jellyfin.mobile.utils.Constants
+import org.jellyfin.sdk.model.api.AudioSpatialFormat
 import org.jellyfin.sdk.model.api.BaseItemDto
 import org.jellyfin.sdk.model.api.BaseItemKind
 import org.jellyfin.sdk.model.api.MediaSourceInfo
@@ -119,6 +120,32 @@ sealed class JellyfinMediaSource(
     }
 
     /**
+     * When [maxBitrate] is capped below [Constants.LOSSLESS_AUDIO_MIN_BITRATE], the transcoding
+     * profile only advertises "aac,eac3" as a copy target (see DeviceProfileBuilder's
+     * LOW_BITRATE_AUDIO_COPY) - so a lossless track like TrueHD/DTS-HD MA would be transcoded
+     * down to plain AAC anyway, discarding any spatial mix. If the source also has an
+     * already-efficient lossy track, switching to it up front lets the server copy it losslessly
+     * instead, preferring an EAC3/JOC track (spatial audio) over a plain one when both exist.
+     *
+     * Returns the stream to switch to, or null if [selectedAudioStream] is already fine as-is.
+     * A pure query, not a mutation: for [org.jellyfin.sdk.model.api.PlayMethod.TRANSCODE], the
+     * server bakes the audio stream choice into `sourceInfo.transcodingUrl` at resolve time, so
+     * merely reassigning [selectedAudioStream] here would be silently ignored - the caller must
+     * re-resolve the media source with this stream's index to actually take effect.
+     */
+    fun findPreferredLowBitrateAudioTrack(maxBitrate: Int?): MediaStream? {
+        if (maxBitrate == null || maxBitrate >= Constants.LOSSLESS_AUDIO_MIN_BITRATE) return null
+        val current = selectedAudioStream ?: return null
+        if (current.codec?.lowercase() in EFFICIENT_LOSSY_AUDIO_CODECS) return null
+
+        return audioStreams.firstOrNull { stream ->
+            stream.codec?.lowercase() == "eac3" && stream.audioSpatialFormat == AudioSpatialFormat.DOLBY_ATMOS
+        } ?: audioStreams.firstOrNull { stream ->
+            stream.codec?.lowercase() in EFFICIENT_LOSSY_AUDIO_CODECS
+        }
+    }
+
+    /**
      * Select the specified [subtitle stream][stream] in the source.
      *
      * @param stream The stream to select, or null to disable subtitles.
@@ -189,6 +216,14 @@ sealed class JellyfinMediaSource(
                 }
             }.ifEmpty { null }
         } ?: sourceInfo.name.orEmpty()
+    }
+
+    private companion object {
+        /**
+         * Codecs cheap enough that a low-bitrate cap doesn't need to crush them down further -
+         * matches DeviceProfileBuilder's own audio-copy allowlists (aac/ac3/eac3/mp3).
+         */
+        val EFFICIENT_LOSSY_AUDIO_CODECS = setOf("aac", "ac3", "eac3", "mp3")
     }
 }
 

@@ -125,6 +125,15 @@ object Constants {
     const val HOLD_SPEEDUP_MULTIPLIER = 3f
     const val ZOOM_SCALE_BASE = 1f
     const val ZOOM_SCALE_THRESHOLD = 0.01f
+
+    /**
+     * Client streaming bitrate ceiling, in bits per second, at/above which a lossless audio
+     * track (AC-3/E-AC-3/DTS/MLP/TrueHD/FLAC) may be copied into a transcode instead of being
+     * re-encoded to AAC. Shared between [org.jellyfin.mobile.player.deviceprofile.DeviceProfileBuilder]
+     * (which uses it to build the offered codec list) and [org.jellyfin.mobile.player.source.JellyfinMediaSource]
+     * (which uses it to decide whether to steer audio-track selection towards an already-efficient track).
+     */
+    const val LOSSLESS_AUDIO_MIN_BITRATE = 25_000_000 // 25 Mbps
     val ASPECT_RATIO_16_9 = Rational(16, 9)
     val PIP_MIN_RATIONAL = Rational(100, 239)
     val PIP_MAX_RATIONAL = Rational(239, 100)
