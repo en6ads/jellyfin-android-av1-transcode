@@ -181,13 +181,16 @@ class QueueManager(
             enableDirectPlay = enableDirectPlay,
             enableDirectStream = enableDirectStream,
         ).onSuccess { jellyfinMediaSource ->
-            // For a transcode, the server already baked the (default) audio track into
-            // sourceInfo.transcodingUrl by the time this response came back, so switching tracks
-            // now takes a full re-resolve with that track's index made explicit - same as any
-            // other transcoding audio-track switch (see selectAudioStreamAndRestartPlayback).
-            // Only steer the default selection, never override an explicit user pick.
-            val preferredTrack = if (audioStreamIndex == null && jellyfinMediaSource.playMethod == PlayMethod.TRANSCODE) {
-                jellyfinMediaSource.findPreferredEfficientAudioTrack(maxStreamingBitrate)
+            // Never rely on an omitted AudioStreamIndex to get "the file's real default" back:
+            // confirmed on real hardware that the server's own DefaultAudioStreamIndex comes back
+            // null regardless of bitrate, and when a source has more than one track flagged
+            // default, it breaks that tie in favor of whichever track is cheapest for it to
+            // deliver - not this app's own intended default. So any non-explicit resolve
+            // (audioStreamIndex == null) always needs a second pass with the track this app
+            // computed made explicit, the same way any other audio-track switch works (see
+            // selectAudioStreamAndRestartPlayback) - only skipped for an actual user pick.
+            val preferredTrack = if (audioStreamIndex == null && jellyfinMediaSource.needsExplicitAudioTrackPin(maxStreamingBitrate)) {
+                jellyfinMediaSource.resolveDefaultAudioTrack(maxStreamingBitrate)
             } else {
                 null
             }
