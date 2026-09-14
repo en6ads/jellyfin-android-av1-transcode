@@ -114,6 +114,7 @@ class DeviceProfileBuilder(
         // are only offered as encode targets when a hardware decoder exists for them.
         val fmp4VideoCodecs = transcodeVideoCodecs("av1", "hevc", "h264")
         val tsVideoCodecs = transcodeVideoCodecs("hevc", "h264")
+        val mkvAudioCodecsCopy = AVAILABLE_AUDIO_CODECS[SUPPORTED_CONTAINER_FORMATS.indexOf("mkv")].joinToString(",")
 
         return listOf(
             TranscodingProfile(
@@ -136,7 +137,7 @@ class DeviceProfileBuilder(
                 type = DlnaProfileType.VIDEO,
                 container = "mkv",
                 videoCodec = tsVideoCodecs,
-                audioCodec = AVAILABLE_AUDIO_CODECS[SUPPORTED_CONTAINER_FORMATS.indexOf("mkv")].joinToString(","),
+                audioCodec = transcodeAudioCodecs(maxBitrate, mkvAudioCodecsCopy),
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
             ),
