@@ -104,12 +104,17 @@ class DeviceProfileBuilder(
      * transcoded output without re-encoding it, but those codecs carry a much higher bitrate
      * than AAC. When the client's streaming bitrate ceiling is at or above
      * [LOSSLESS_AUDIO_MIN_BITRATE] there is enough budget to let that happen; otherwise
-     * [LOW_BITRATE_AUDIO_COPY] is advertised instead, so a low-bitrate cap isn't blown by an
-     * audio track alone while an already-EAC3/JOC source can still be copied rather than
-     * re-encoded.
+     * [lowBitrateCopyCodecs] is advertised instead, so a low-bitrate cap isn't blown by an
+     * audio track alone.
+     *
+     * [lowBitrateCopyCodecs] must be supplied per-container, not shared: eac3 is only safe to
+     * include for mp4 ([MP4_AUDIO_CODECS_COPY] already allows it at any bitrate). Reusing that
+     * for ts/mkv here would silently reintroduce eac3 as a copy target on the very path
+     * [TS_AUDIO_CODECS_COPY] deliberately excludes it from, undoing the ts/EAC3 crash fix the
+     * moment a low bitrate cap is in effect.
      */
-    private fun transcodeAudioCodecs(maxBitrate: Int, copyCodecs: String): String =
-        if (maxBitrate >= LOSSLESS_AUDIO_MIN_BITRATE) copyCodecs else LOW_BITRATE_AUDIO_COPY
+    private fun transcodeAudioCodecs(maxBitrate: Int, copyCodecs: String, lowBitrateCopyCodecs: String = TRANSCODE_AUDIO_EFFICIENT): String =
+        if (maxBitrate >= LOSSLESS_AUDIO_MIN_BITRATE) copyCodecs else lowBitrateCopyCodecs
 
     private fun buildTranscodingProfiles(maxBitrate: Int): List<TranscodingProfile> {
         // fMP4 HLS can carry AV1/HEVC; MPEG-TS/MKV are the compatibility paths. Modern codecs
@@ -145,7 +150,7 @@ class DeviceProfileBuilder(
                 type = DlnaProfileType.VIDEO,
                 container = "mp4",
                 videoCodec = fmp4VideoCodecs,
-                audioCodec = transcodeAudioCodecs(maxBitrate, MP4_AUDIO_CODECS_COPY),
+                audioCodec = transcodeAudioCodecs(maxBitrate, MP4_AUDIO_CODECS_COPY, LOW_BITRATE_AUDIO_COPY),
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
             ),
@@ -338,11 +343,15 @@ class DeviceProfileBuilder(
         private const val TRANSCODE_AUDIO_EFFICIENT = "aac"
 
         /**
-         * Below [LOSSLESS_AUDIO_MIN_BITRATE], AAC still leads so it's what ffmpeg re-encodes
-         * into when no source track matches (StreamBuilder.cs:1190 always targets index 0) -
-         * but a source that already has an EAC3/JOC track gets copied, not re-encoded, so
-         * appending "eac3" here costs no extra bitrate over the AAC-only list while letting
-         * JOC pass through even under a low bitrate cap.
+         * mp4-only: below [LOSSLESS_AUDIO_MIN_BITRATE], AAC still leads so it's what ffmpeg
+         * re-encodes into when no source track matches (StreamBuilder.cs:1190 always targets
+         * index 0) - but a source that already has an EAC3/JOC track gets copied, not
+         * re-encoded, so appending "eac3" here costs no extra bitrate over the AAC-only list
+         * while letting JOC pass through even under a low bitrate cap.
+         *
+         * Must never be reused for ts/mkv: eac3 is exactly the codec [TS_AUDIO_CODECS_COPY]
+         * deliberately excludes to avoid the ts/EAC3 MediaCodecAudioRenderer crash, and mp4 is
+         * the only container confirmed safe for it.
          */
         private const val LOW_BITRATE_AUDIO_COPY = "$TRANSCODE_AUDIO_EFFICIENT,eac3"
 
