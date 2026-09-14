@@ -110,9 +110,9 @@ class DeviceProfileBuilder(
         if (maxBitrate >= LOSSLESS_AUDIO_MIN_BITRATE) copyCodecs else TRANSCODE_AUDIO_EFFICIENT
 
     private fun buildTranscodingProfiles(maxBitrate: Int): List<TranscodingProfile> {
-        // fMP4 HLS can carry AV1/HEVC; MPEG-TS/MKV are the compatibility paths. Modern codecs
-        // are only offered as encode targets when a hardware decoder exists for them.
-        val fmp4VideoCodecs = transcodeVideoCodecs("av1", "hevc", "h264")
+        // mp4/mkv can both carry AV1/HEVC; ts is the compatibility path, hevc/h264 only. Modern
+        // codecs are only offered as encode targets when a hardware decoder exists for them.
+        val modernVideoCodecs = transcodeVideoCodecs("av1", "hevc", "h264")
         val tsVideoCodecs = transcodeVideoCodecs("hevc", "h264")
         val mkvAudioCodecsCopy = AVAILABLE_AUDIO_CODECS[SUPPORTED_CONTAINER_FORMATS.indexOf("mkv")].joinToString(",")
 
@@ -120,7 +120,7 @@ class DeviceProfileBuilder(
             TranscodingProfile(
                 type = DlnaProfileType.VIDEO,
                 container = "mp4",
-                videoCodec = fmp4VideoCodecs,
+                videoCodec = modernVideoCodecs,
                 audioCodec = transcodeAudioCodecs(maxBitrate, MP4_AUDIO_CODECS_COPY),
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
@@ -136,7 +136,7 @@ class DeviceProfileBuilder(
             TranscodingProfile(
                 type = DlnaProfileType.VIDEO,
                 container = "mkv",
-                videoCodec = tsVideoCodecs,
+                videoCodec = modernVideoCodecs,
                 audioCodec = transcodeAudioCodecs(maxBitrate, mkvAudioCodecsCopy),
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
