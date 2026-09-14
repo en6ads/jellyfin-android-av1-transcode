@@ -153,7 +153,13 @@ sealed class JellyfinMediaSource(
      * tie-break (see [fileDefaultAudioStream]). Returns null only if the source has no audio at
      * all.
      *
-     * Whichever bitrate regime is in effect, mp4 can only ever *copy* a specific codec set -
+     * [maxBitrate] == null (Auto/uncapped) always returns [fileDefaultAudioStream] as-is, no
+     * preference override: with nothing constraining bitrate, direct play is the likely outcome
+     * anyway (no transcode codec-copy concept even applies), and even where a transcode still
+     * happens it's against a ceiling high enough that there's no real re-encode concern to trade
+     * against - so there's no reason to prefer anything over this app's own intended default.
+     *
+     * For a genuine finite cap, mp4 can only ever *copy* a specific codec set -
      * [Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS] below [Constants.LOSSLESS_AUDIO_MIN_BITRATE],
      * [Constants.MP4_AUDIO_COPY_CODECS] at or above it. A default track outside that set (e.g.
      * TrueHD/DTS-HD MA, which mp4 never offers to copy at any bitrate - see
@@ -176,7 +182,9 @@ sealed class JellyfinMediaSource(
      */
     fun resolveDefaultAudioTrack(maxBitrate: Int?): MediaStream? {
         val fileDefault = fileDefaultAudioStream ?: return null
-        val isBitrateCapped = maxBitrate != null && maxBitrate < Constants.LOSSLESS_AUDIO_MIN_BITRATE
+        if (maxBitrate == null) return fileDefault
+
+        val isBitrateCapped = maxBitrate < Constants.LOSSLESS_AUDIO_MIN_BITRATE
         val copyEligibleCodecs = if (isBitrateCapped) Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS else Constants.MP4_AUDIO_COPY_CODECS
         if (fileDefault.codec?.lowercase() in copyEligibleCodecs) return fileDefault
 
