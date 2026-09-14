@@ -278,8 +278,35 @@ class DeviceProfileBuilder(
                     isRequired = false,
                 ),
                 // Dolby Vision Profile 7 (dual-layer, base + enhancement) isn't something a plain
-                // HEVC decoder can handle directly - excluding it forces a real transcode instead
-                // of an unsafe direct-stream copy that would otherwise produce a black screen.
+                // HEVC decoder can handle directly - excluding it is meant to force a real
+                // transcode instead of an unsafe direct-stream copy that would otherwise produce
+                // a black screen.
+                //
+                // KNOWN GAP, confirmed on real hardware, currently unresolved: this CodecProfile
+                // is declared once per SUPPORTED_CONTAINER_FORMATS entry, which spells this
+                // particular container "mpegts" - but buildTranscodingProfiles() declares the
+                // actual transcoding path itself as "ts". Whatever string the server matches
+                // CodecProfile.Container against for that path, the two declarations disagree, so
+                // this exclusion silently never applies there. In practice a Profile 7 FEL source
+                // that lands on the "ts" transcoding path gets its video stream-copied
+                // (`-codec:v copy`) instead of re-encoded, tagged generically as plain "hvc1" (no
+                // DV claim) - and that copy happens to play fine on real hardware anyway, most
+                // likely because the decoder just ignores the enhancement-layer NAL units it
+                // doesn't recognize and decodes the valid, complete base layer alone as HDR10.
+                //
+                // This was "fixed" once (declaring container = "mpegts,ts" so both spellings
+                // match) and reverted after confirming on real hardware that it made things
+                // worse, not better: the exclusion then correctly blocked the ts stream-copy, but
+                // the server's next choice wasn't a real re-encode either - it picked mp4 instead,
+                // which *also* just stream-copies the video, except tagged "dvh1" (explicitly
+                // claiming valid Dolby Vision). That's actively wrong for untouched dual-layer
+                // data and the client fails to parse it ("format null" error on device) - worse
+                // than the original silent gap. So the currently-working FEL playback is not the
+                // designed safe behavior; it's a side effect of this exclusion failing to apply,
+                // landing on a copy path that happens to be benign rather than one that isn't.
+                // A real fix needs the server to actually fall through to a genuine re-encode when
+                // a direct copy is disqualified for DV reasons, on whichever container ends up
+                // handling it - not something visible or fixable from this repo alone.
                 ProfileCondition(
                     condition = ProfileConditionType.NOT_EQUALS,
                     property = ProfileConditionValue.VIDEO_RANGE_TYPE,
