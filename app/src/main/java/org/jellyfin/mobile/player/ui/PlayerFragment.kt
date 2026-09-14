@@ -49,6 +49,7 @@ import org.jellyfin.mobile.utils.Constants.PIP_MIN_RATIONAL
 import org.jellyfin.mobile.utils.SmartOrientationListener
 import org.jellyfin.mobile.utils.brightness
 import org.jellyfin.mobile.utils.extensions.aspectRational
+import org.jellyfin.mobile.utils.extensions.displayAspectRatio
 import org.jellyfin.mobile.utils.extensions.getParcelableCompat
 import org.jellyfin.mobile.utils.extensions.isLandscape
 import org.jellyfin.mobile.utils.extensions.keepScreenOn
@@ -134,9 +135,9 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
 
             if (::playerGestureHelper.isInitialized) {
                 playerGestureHelper.resetAutoZoom()
-                mediaSource.selectedVideoStream?.aspectRational?.let { aspectRational ->
-                    playerGestureHelper.applyAutoZoom(aspectRational.toFloat())
-                }
+                val videoStream = mediaSource.selectedVideoStream
+                val initialAspectRatio = videoStream?.displayAspectRatio ?: videoStream?.aspectRational?.toFloat()
+                initialAspectRatio?.let { playerGestureHelper.applyAutoZoom(it) }
             }
         }
         viewModel.videoSize.observe(this) { videoSize ->
