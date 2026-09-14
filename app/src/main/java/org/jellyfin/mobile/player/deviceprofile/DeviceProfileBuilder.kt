@@ -348,7 +348,7 @@ class DeviceProfileBuilder(
          * deliberately excludes to avoid the ts/EAC3 MediaCodecAudioRenderer crash, and mp4 is
          * the only container confirmed safe for it.
          */
-        private const val LOW_BITRATE_AUDIO_COPY = "$TRANSCODE_AUDIO_EFFICIENT,eac3"
+        private val LOW_BITRATE_AUDIO_COPY = Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS.joinToString(",")
 
         /**
          * Must only contain codecs the server's own HLS ts audio allowlist actually permits
@@ -388,7 +388,7 @@ class DeviceProfileBuilder(
          *   container and is nominally on the server's list.
          * - mlp isn't in the server's own mp4 allowlist at all, so including it would be a no-op.
          */
-        private const val MP4_AUDIO_CODECS_COPY = "$TRANSCODE_AUDIO_EFFICIENT,ac3,eac3,dts"
+        private val MP4_AUDIO_CODECS_COPY = Constants.MP4_AUDIO_COPY_CODECS.joinToString(",")
 
         /**
          * List of container formats supported by ExoPlayer
