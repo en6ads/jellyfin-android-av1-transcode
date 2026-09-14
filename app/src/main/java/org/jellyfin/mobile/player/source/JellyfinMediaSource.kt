@@ -50,12 +50,16 @@ sealed class JellyfinMediaSource(
         get() = selectedSubtitleStream?.index ?: -1
 
     /**
-     * True when [selectedAudioStream] was steered by [findPreferredEfficientAudioTrack] rather
-     * than picked explicitly by the user (or left at the file's own default). QueueManager uses
-     * this to decide whether a later restart (e.g. a bitrate change) should carry the selection
-     * forward as-is or let it be re-evaluated from scratch for the new conditions.
+     * True only when [selectedAudioStream] was picked explicitly by the user (via the track
+     * menu) - false both for the file's own untouched default AND for a track
+     * [findPreferredEfficientAudioTrack] steered towards. QueueManager uses this to decide
+     * whether a later restart (e.g. a bitrate change) must carry the selection forward as-is
+     * (explicit picks always win) or is free to let it be re-evaluated from scratch for the new
+     * conditions - which matters for the untouched-default case too, not just the auto-picked
+     * one: a file's default track may newly qualify for auto-preference once the bitrate drops,
+     * or stop qualifying once it rises back above the lossless threshold.
      */
-    var isAudioTrackAutoSelected: Boolean = false
+    var isExplicitAudioTrackSelection: Boolean = false
 
     init {
         // Classify MediaStreams
