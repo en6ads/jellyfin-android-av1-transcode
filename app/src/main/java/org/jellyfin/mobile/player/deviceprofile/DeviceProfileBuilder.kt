@@ -110,9 +110,15 @@ class DeviceProfileBuilder(
         if (maxBitrate >= LOSSLESS_AUDIO_MIN_BITRATE) copyCodecs else TRANSCODE_AUDIO_EFFICIENT
 
     private fun buildTranscodingProfiles(maxBitrate: Int): List<TranscodingProfile> {
-        // mp4/mkv can both carry AV1/HEVC; ts is the compatibility path, hevc/h264 only. Modern
-        // codecs are only offered as encode targets when a hardware decoder exists for them.
-        val modernVideoCodecs = transcodeVideoCodecs("av1", "hevc", "h264")
+        // fMP4 HLS can carry AV1/HEVC; MPEG-TS/MKV are the compatibility paths. Modern codecs
+        // are only offered as encode targets when a hardware decoder exists for them.
+        //
+        // The server's own HLS audio allowlist (StreamBuilder's _supportedHlsAudioCodecsTs)
+        // caps every non-mp4 HLS container - ts and mkv alike - at aac/ac3/eac3/mp3, regardless
+        // of what this profile declares. Only mp4's allowlist includes dts/truehd, so mp4 is the
+        // only container that can carry lossless-ish audio through a real transcode; av1/mkv
+        // would not have actually unlocked more than ts already offers.
+        val fmp4VideoCodecs = transcodeVideoCodecs("av1", "hevc", "h264")
         val tsVideoCodecs = transcodeVideoCodecs("hevc", "h264")
         val mkvAudioCodecsCopy = AVAILABLE_AUDIO_CODECS[SUPPORTED_CONTAINER_FORMATS.indexOf("mkv")].joinToString(",")
 
@@ -120,7 +126,7 @@ class DeviceProfileBuilder(
             TranscodingProfile(
                 type = DlnaProfileType.VIDEO,
                 container = "mp4",
-                videoCodec = modernVideoCodecs,
+                videoCodec = fmp4VideoCodecs,
                 audioCodec = transcodeAudioCodecs(maxBitrate, MP4_AUDIO_CODECS_COPY),
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
@@ -136,7 +142,7 @@ class DeviceProfileBuilder(
             TranscodingProfile(
                 type = DlnaProfileType.VIDEO,
                 container = "mkv",
-                videoCodec = modernVideoCodecs,
+                videoCodec = tsVideoCodecs,
                 audioCodec = transcodeAudioCodecs(maxBitrate, mkvAudioCodecsCopy),
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
@@ -315,14 +321,16 @@ class DeviceProfileBuilder(
         private const val TS_AUDIO_CODECS_COPY = "mp1,mp2,mp3,$TRANSCODE_AUDIO_EFFICIENT,ac3,eac3,dts,mlp,truehd"
 
         /**
-         * mp4/fMP4 only reliably carries [TRANSCODE_AUDIO_EFFICIENT] and ac3 on this app's own
-         * direct-play compatibility table (AVAILABLE_AUDIO_CODECS for the "mp4" container) -
-         * eac3/dts/mlp/truehd/flac aren't listed there, and copying truehd into it in practice
+         * The server's own HLS mp4 audio allowlist (StreamBuilder's _supportedHlsAudioCodecsMp4)
+         * permits aac/ac3/eac3/mp3/alac/flac/opus/dts/truehd - anything else in this list is a
+         * no-op there regardless. Of those, dts is confirmed working on real hardware (copied
+         * losslessly into an mp4/AV1 transcode without issue); truehd is excluded because it
          * produces a stream this client's mp4 extractor can't parse ("codec frame size is not
          * set" from the muxer, and a playback error on device) even though the same audio plays
-         * fine natively inside its original mkv container.
+         * fine natively inside its original mkv container and is nominally on the server's list.
+         * mlp isn't in the server's own mp4 allowlist at all, so including it would be a no-op.
          */
-        private const val MP4_AUDIO_CODECS_COPY = "$TRANSCODE_AUDIO_EFFICIENT,ac3"
+        private const val MP4_AUDIO_CODECS_COPY = "$TRANSCODE_AUDIO_EFFICIENT,ac3,dts"
 
         /**
          * List of container formats supported by ExoPlayer
