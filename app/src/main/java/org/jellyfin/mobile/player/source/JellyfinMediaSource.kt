@@ -153,12 +153,15 @@ sealed class JellyfinMediaSource(
      * tie-break (see [fileDefaultAudioStream]). Returns null only if the source has no audio at
      * all.
      *
-     * Below [Constants.LOSSLESS_AUDIO_MIN_BITRATE], the transcoding profile only advertises
-     * "aac,eac3" as a copy target (DeviceProfileBuilder's LOW_BITRATE_AUDIO_COPY, mp4-only) - so
-     * a lossless default like TrueHD/DTS-HD MA would be transcoded down to plain AAC anyway,
-     * discarding any spatial mix. If the source also has an already-efficient lossy track,
-     * preferring it instead lets the server copy it losslessly, preferring an EAC3/JOC track
-     * (spatial audio) over a plain one when both exist.
+     * Whichever bitrate regime is in effect, mp4 can only ever *copy* a specific codec set -
+     * [Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS] below [Constants.LOSSLESS_AUDIO_MIN_BITRATE],
+     * [Constants.MP4_AUDIO_COPY_CODECS] at or above it. A default track outside that set (e.g.
+     * TrueHD/DTS-HD MA, which mp4 never offers to copy at any bitrate - see
+     * DeviceProfileBuilder's MP4_AUDIO_CODECS_COPY) gets crushed to plain AAC regardless, so if
+     * the source also has an already-efficient track that mp4 *can* copy, preferring it instead
+     * avoids a pointless re-encode - preferring an EAC3/JOC track (spatial audio) over a plain
+     * one when both exist, since a straight copy preserves it far better than a fresh AAC
+     * re-encode would.
      *
      * Deliberately NOT extended to DV Profile 7 sources on the ts/mkv path (which never offers
      * eac3 as a copy target - see TS_AUDIO_CODECS_COPY): there, EAC3/JOC would still be
@@ -174,12 +177,13 @@ sealed class JellyfinMediaSource(
     fun resolveDefaultAudioTrack(maxBitrate: Int?): MediaStream? {
         val fileDefault = fileDefaultAudioStream ?: return null
         val isBitrateCapped = maxBitrate != null && maxBitrate < Constants.LOSSLESS_AUDIO_MIN_BITRATE
-        if (!isBitrateCapped || fileDefault.codec?.lowercase() in EFFICIENT_LOSSY_AUDIO_CODECS) return fileDefault
+        val copyEligibleCodecs = if (isBitrateCapped) Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS else Constants.MP4_AUDIO_COPY_CODECS
+        if (fileDefault.codec?.lowercase() in copyEligibleCodecs) return fileDefault
 
         return audioStreams.firstOrNull { stream ->
             stream.codec?.lowercase() == "eac3" && stream.audioSpatialFormat == AudioSpatialFormat.DOLBY_ATMOS
         } ?: audioStreams.firstOrNull { stream ->
-            stream.codec?.lowercase() in EFFICIENT_LOSSY_AUDIO_CODECS
+            stream.codec?.lowercase() in copyEligibleCodecs
         } ?: fileDefault
     }
 
@@ -268,14 +272,6 @@ sealed class JellyfinMediaSource(
                 }
             }.ifEmpty { null }
         } ?: sourceInfo.name.orEmpty()
-    }
-
-    private companion object {
-        /**
-         * Codecs cheap enough that a low-bitrate cap doesn't need to crush them down further -
-         * matches DeviceProfileBuilder's own audio-copy allowlists (aac/ac3/eac3/mp3).
-         */
-        val EFFICIENT_LOSSY_AUDIO_CODECS = setOf("aac", "ac3", "eac3", "mp3")
     }
 }
 
