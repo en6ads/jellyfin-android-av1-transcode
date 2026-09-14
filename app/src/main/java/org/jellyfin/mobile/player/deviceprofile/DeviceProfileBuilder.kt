@@ -122,9 +122,12 @@ class DeviceProfileBuilder(
         // So mp4 is the only container that can carry lossless-ish audio through a real
         // transcode at all; offering av1 on mkv was tried and confirmed on real hardware to not
         // unlock anything beyond what ts already gets, since mkv gets the ts-sized allowlist too.
+        // For that same reason, mkv's copy list must match ts's exactly rather than mkv's own
+        // (much broader) native/direct-play codec table - declaring more than the real allowlist
+        // permits doesn't just fail to help, it actively misleads the server's ranking step (see
+        // TS_AUDIO_CODECS_COPY's doc comment for why).
         val fmp4VideoCodecs = transcodeVideoCodecs("av1", "hevc", "h264")
         val tsVideoCodecs = transcodeVideoCodecs("hevc", "h264")
-        val mkvAudioCodecsCopy = AVAILABLE_AUDIO_CODECS[SUPPORTED_CONTAINER_FORMATS.indexOf("mkv")].joinToString(",")
 
         return listOf(
             TranscodingProfile(
@@ -147,7 +150,7 @@ class DeviceProfileBuilder(
                 type = DlnaProfileType.VIDEO,
                 container = "mkv",
                 videoCodec = tsVideoCodecs,
-                audioCodec = transcodeAudioCodecs(maxBitrate, mkvAudioCodecsCopy),
+                audioCodec = transcodeAudioCodecs(maxBitrate, TS_AUDIO_CODECS_COPY),
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
             ),
