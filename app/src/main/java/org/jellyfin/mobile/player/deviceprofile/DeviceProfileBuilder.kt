@@ -103,11 +103,13 @@ class DeviceProfileBuilder(
      * FFmpeg can remux a lossless source track (AC-3/E-AC-3/DTS/MLP/TrueHD/FLAC) into the
      * transcoded output without re-encoding it, but those codecs carry a much higher bitrate
      * than AAC. When the client's streaming bitrate ceiling is at or above
-     * [LOSSLESS_AUDIO_MIN_BITRATE] there is enough budget to let that happen; otherwise only
-     * AAC is advertised so a low-bitrate cap isn't blown by an audio track alone.
+     * [LOSSLESS_AUDIO_MIN_BITRATE] there is enough budget to let that happen; otherwise
+     * [LOW_BITRATE_AUDIO_COPY] is advertised instead, so a low-bitrate cap isn't blown by an
+     * audio track alone while an already-EAC3/JOC source can still be copied rather than
+     * re-encoded.
      */
     private fun transcodeAudioCodecs(maxBitrate: Int, copyCodecs: String): String =
-        if (maxBitrate >= LOSSLESS_AUDIO_MIN_BITRATE) copyCodecs else TRANSCODE_AUDIO_EFFICIENT
+        if (maxBitrate >= LOSSLESS_AUDIO_MIN_BITRATE) copyCodecs else LOW_BITRATE_AUDIO_COPY
 
     private fun buildTranscodingProfiles(maxBitrate: Int): List<TranscodingProfile> {
         // fMP4 HLS can carry AV1/HEVC; MPEG-TS/MKV are the compatibility paths. Modern codecs
@@ -336,6 +338,15 @@ class DeviceProfileBuilder(
         private const val TRANSCODE_AUDIO_EFFICIENT = "aac"
 
         /**
+         * Below [LOSSLESS_AUDIO_MIN_BITRATE], AAC still leads so it's what ffmpeg re-encodes
+         * into when no source track matches (StreamBuilder.cs:1190 always targets index 0) -
+         * but a source that already has an EAC3/JOC track gets copied, not re-encoded, so
+         * appending "eac3" here costs no extra bitrate over the AAC-only list while letting
+         * JOC pass through even under a low bitrate cap.
+         */
+        private const val LOW_BITRATE_AUDIO_COPY = "$TRANSCODE_AUDIO_EFFICIENT,eac3"
+
+        /**
          * Must only contain codecs the server's own HLS ts audio allowlist actually permits
          * (StreamBuilder's _supportedHlsAudioCodecsTs = aac/ac3/eac3/mp3). Declaring anything
          * beyond that (mp1/mp2/dts/mlp/truehd) doesn't just fail to help - it actively harms
@@ -347,8 +358,15 @@ class DeviceProfileBuilder(
          * (which honestly reports no match, since mp4's own list doesn't claim truehd) - only for
          * the ts audio allowlist to then strip truehd back out anyway, landing on a worse result
          * (MP3, AV1 lost) than mp4's honest fallback (AAC, AV1 kept) would have given.
+         *
+         * eac3 is deliberately absent, unlike mp4's copy list below: confirmed on real hardware
+         * that a Dolby Vision Profile 7 FEL source (forced onto this ts/mkv path) crashes
+         * MediaCodecAudioRenderer when its EAC3 track is selected here, while the same file's
+         * TrueHD track and EAC3 delivered via mp4 both play fine - the failure is specific to
+         * EAC3-over-MPEG-TS on this decoder. Losing the ranking to mp4 or falling back to AAC
+         * beats crashing.
          */
-        private const val TS_AUDIO_CODECS_COPY = "$TRANSCODE_AUDIO_EFFICIENT,ac3,eac3,mp3"
+        private const val TS_AUDIO_CODECS_COPY = "$TRANSCODE_AUDIO_EFFICIENT,ac3,mp3"
 
         /**
          * The server's own HLS mp4 audio allowlist (StreamBuilder's _supportedHlsAudioCodecsMp4)
