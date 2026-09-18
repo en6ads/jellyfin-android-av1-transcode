@@ -181,6 +181,47 @@ class QueueManager(
             enableDirectPlay = enableDirectPlay,
             enableDirectStream = enableDirectStream,
         ).onSuccess { jellyfinMediaSource ->
+            // Dolby Vision Profile 7 renders a black screen when direct played, and does so
+            // SILENTLY - ExoPlayer raises no error, so restartPlaybackWithFallback never fires
+            // and nothing recovers on its own. Re-resolve with direct play disabled the moment
+            // the server picks it, so the untouched dual-layer stream is never handed to the
+            // decoder in the first place.
+            //
+            // That much is the point of this guard and holds regardless of server version. What
+            // the server does INSTEAD is version-dependent, and worth being precise about:
+            //   Jellyfin 12.0 - remuxes and copies the video (`-codec:v:0 copy`), so the HDR10
+            //                   base layer survives intact. This is the good outcome.
+            //   Jellyfin 12.1 - re-encodes and tonemaps to SDR. Playable, but HDR is lost.
+            // Both confirmed on real hardware with the same file and the same app binary; the
+            // change is a server regression, not something this client can steer.
+            //
+            // Deliberately NOT expressed as a VIDEO_RANGE_TYPE condition in DeviceProfileBuilder:
+            // a codec profile condition disqualifies the codec itself, which forces a re-encode
+            // on every server version and so removes even the 12.0 copy. What has to be blocked
+            // is direct play specifically, leaving the codec eligible so a copy stays possible
+            // wherever the server is still willing to do one.
+            //
+            // Guarded on enableDirectPlay != false so the re-resolve cannot recurse: the second
+            // pass passes false, and the server cannot answer it with DIRECT_PLAY again.
+            if (enableDirectPlay != false &&
+                jellyfinMediaSource.playMethod == PlayMethod.DIRECT_PLAY &&
+                jellyfinMediaSource.isDolbyVisionProfile7
+            ) {
+                Timber.i("Dolby Vision Profile 7 direct play selected; re-resolving without direct play")
+                return startRemotePlayback(
+                    itemId = itemId,
+                    mediaSourceId = jellyfinMediaSource.id,
+                    maxStreamingBitrate = maxStreamingBitrate,
+                    startTime = startTime,
+                    audioStreamIndex = audioStreamIndex,
+                    subtitleStreamIndex = subtitleStreamIndex,
+                    playWhenReady = playWhenReady,
+                    enableDirectPlay = false,
+                    enableDirectStream = enableDirectStream,
+                    isExplicitAudioTrackSelection = isExplicitAudioTrackSelection,
+                )
+            }
+
             // Never rely on an omitted AudioStreamIndex to get "the file's real default" back:
             // confirmed on real hardware that the server's own DefaultAudioStreamIndex comes back
             // null regardless of bitrate, and when a source has more than one track flagged
