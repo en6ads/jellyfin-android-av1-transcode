@@ -117,22 +117,18 @@ class DeviceProfileBuilder(
         if (maxBitrate >= Constants.LOSSLESS_AUDIO_MIN_BITRATE) copyCodecs else lowBitrateCopyCodecs
 
     /**
-     * Cap the transcode target's channel count when the bitrate ceiling is tight, gated on the
-     * same [Constants.LOSSLESS_AUDIO_MIN_BITRATE] threshold as [transcodeAudioCodecs] - the two
-     * decisions are really the same decision, so they share a threshold deliberately.
+     * Cap the transcode target's channel count when the bitrate ceiling is too tight to justify
+     * carrying more than two channels, gated on [Constants.MULTICHANNEL_AUDIO_MIN_BITRATE].
      *
-     * Below that threshold, no source track is copy-eligible beyond
-     * [Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS], so multichannel audio is going to be
-     * re-encoded regardless. Letting it be re-encoded at 5.1 just spends the budget twice over:
-     * measured against a real 12.1 server at a 1.5 Mbps ceiling, the split was 1116 kbps video
-     * against 384 kbps of 6-channel AAC - over a quarter of the whole stream on channels the
-     * playback device downmixes anyway. The share grows as the ceiling drops, because the server
-     * scales audio down far less aggressively than video. Capping to stereo hands that back to
-     * the video encoder, which is where it is actually visible.
+     * Note this is a LOWER, separate threshold from the [Constants.LOSSLESS_AUDIO_MIN_BITRATE]
+     * used by [transcodeAudioCodecs], and the gap between them is load-bearing. Reusing the
+     * lossless threshold here would suppress the mp4 EAC3/JOC copy that
+     * [Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS] deliberately allows below it - a channel cap
+     * forces a downmix, and a downmix cannot be a copy. Keeping the channel cap lower leaves a
+     * band where an already-efficient multichannel track still passes through intact.
      *
-     * At or above the threshold this returns null (no cap): there the copy lists mean a
-     * multichannel source track can pass through untouched, and forcing stereo would turn a
-     * free lossless copy into a pointless downmix - the exact opposite of the intent.
+     * At or above the threshold this returns null (no cap), so a copy-eligible multichannel
+     * source is never pointlessly downmixed.
      *
      * Declared on the TranscodingProfile rather than as an AUDIO_CHANNELS CodecProfile condition
      * on purpose: a CodecProfile condition is also evaluated for direct play, so it would push
@@ -140,7 +136,39 @@ class DeviceProfileBuilder(
      * TranscodingProfile field only constrains streams that were already going to be transcoded.
      */
     private fun transcodeAudioChannels(maxBitrate: Int): String? =
-        if (maxBitrate >= Constants.LOSSLESS_AUDIO_MIN_BITRATE) null else TRANSCODE_MAX_AUDIO_CHANNELS
+        if (maxBitrate >= Constants.MULTICHANNEL_AUDIO_MIN_BITRATE) null else TRANSCODE_MAX_AUDIO_CHANNELS
+
+    /**
+     * Pair the stereo cap from [transcodeAudioChannels] with a matching audio bitrate ceiling,
+     * so the downmix actually returns budget to the video encoder. Capping channels alone does
+     * not: the server sizes the audio allocation from its own ladder and will happily spend a
+     * multichannel-sized budget on two channels, which wastes the saving the cap was meant to
+     * produce.
+     *
+     * Declared as TranscodingProfile conditions rather than on a CodecProfile because
+     * TranscodingProfile.Conditions are applied by the server only after Transcode has already
+     * been chosen (StreamBuilder's ApplyTranscodingConditions), so they cannot disqualify direct
+     * play or direct stream. An AUDIO_BITRATE condition on a VIDEO_AUDIO CodecProfile would be
+     * evaluated for those paths too and would force a transcode of any source whose audio track
+     * simply happens to exceed the ceiling - precisely the opposite of the intent.
+     *
+     * LESS_THAN_EQUAL is honoured as a minimum against whatever the server already picked
+     * (`item.AudioBitrate = Math.Min(num, item.AudioBitrate ?? num)`), so this only ever lowers
+     * the allocation, never raises it.
+     */
+    private fun transcodeAudioConditions(maxBitrate: Int): List<ProfileCondition> =
+        if (maxBitrate >= Constants.MULTICHANNEL_AUDIO_MIN_BITRATE) {
+            emptyList()
+        } else {
+            listOf(
+                ProfileCondition(
+                    condition = ProfileConditionType.LESS_THAN_EQUAL,
+                    property = ProfileConditionValue.AUDIO_BITRATE,
+                    value = Constants.STEREO_AUDIO_MAX_BITRATE.toString(),
+                    isRequired = false,
+                ),
+            )
+        }
 
     private fun buildTranscodingProfiles(maxBitrate: Int): List<TranscodingProfile> {
         // fMP4 HLS can carry AV1/HEVC; MPEG-TS/MKV are the compatibility paths. Modern codecs
@@ -179,7 +207,7 @@ class DeviceProfileBuilder(
                 audioCodec = transcodeAudioCodecs(maxBitrate, MP4_AUDIO_CODECS_COPY, LOW_BITRATE_AUDIO_COPY),
                 protocol = MediaStreamProtocol.HLS,
                 maxAudioChannels = transcodeAudioChannels(maxBitrate),
-                conditions = emptyList(),
+                conditions = transcodeAudioConditions(maxBitrate),
             ),
             TranscodingProfile(
                 type = DlnaProfileType.VIDEO,
@@ -188,7 +216,7 @@ class DeviceProfileBuilder(
                 audioCodec = transcodeAudioCodecs(maxBitrate, TS_AUDIO_CODECS_COPY),
                 protocol = MediaStreamProtocol.HLS,
                 maxAudioChannels = transcodeAudioChannels(maxBitrate),
-                conditions = emptyList(),
+                conditions = transcodeAudioConditions(maxBitrate),
             ),
             TranscodingProfile(
                 type = DlnaProfileType.VIDEO,
@@ -197,7 +225,7 @@ class DeviceProfileBuilder(
                 audioCodec = transcodeAudioCodecs(maxBitrate, TS_AUDIO_CODECS_COPY),
                 protocol = MediaStreamProtocol.HLS,
                 maxAudioChannels = transcodeAudioChannels(maxBitrate),
-                conditions = emptyList(),
+                conditions = transcodeAudioConditions(maxBitrate),
             ),
             TranscodingProfile(
                 type = DlnaProfileType.AUDIO,
