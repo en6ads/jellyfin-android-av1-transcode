@@ -178,6 +178,11 @@ class SettingsFragment : Fragment(), BackPressInterceptor {
             summaryRes = R.string.pref_exoplayer_restrict_transcoding_to_mp4_description
             enabled = appPreferences.videoPlayerType == VideoPlayerType.EXO_PLAYER
         }
+        checkBox(Constants.PREF_EXOPLAYER_RESTRICT_TRANSCODING_TO_MKV) {
+            titleRes = R.string.pref_exoplayer_restrict_transcoding_to_mkv
+            summaryRes = R.string.pref_exoplayer_restrict_transcoding_to_mkv_description
+            enabled = appPreferences.videoPlayerType == VideoPlayerType.EXO_PLAYER
+        }
         val networkBufferOptions = listOf(
             SelectionItem(
                 Constants.NETWORK_BUFFER_AUTO,

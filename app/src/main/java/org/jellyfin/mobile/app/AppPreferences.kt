@@ -136,6 +136,15 @@ class AppPreferences(context: Context) {
     val exoPlayerRestrictTranscodingToMp4: Boolean
         get() = sharedPreferences.getBoolean(Constants.PREF_EXOPLAYER_RESTRICT_TRANSCODING_TO_MP4, false)
 
+    /**
+     * Debug/diagnostic toggle: when enabled, only the mkv transcoding profile is offered to the
+     * server - mp4 and ts are dropped entirely. Since mkv shares ts's own codec/copy lists (see
+     * the comment in DeviceProfileBuilder), this isolates whether a client-side crash seen when
+     * forcing mp4 is specific to fMP4's box structure (e.g. dvcC/dvvC) or a broader non-ts issue.
+     */
+    val exoPlayerRestrictTranscodingToMkv: Boolean
+        get() = sharedPreferences.getBoolean(Constants.PREF_EXOPLAYER_RESTRICT_TRANSCODING_TO_MKV, false)
+
     val exoPlayerNetworkBuffer: String
         get() = sharedPreferences.getString(Constants.PREF_EXOPLAYER_NETWORK_BUFFER, Constants.NETWORK_BUFFER_AUTO)!!
 

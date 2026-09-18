@@ -114,6 +114,8 @@
     <string name="pref_exoplayer_direct_play_ass_description">Use experimental client-side subtitle rendering, may not always work</string>
     <string name="pref_exoplayer_restrict_transcoding_to_mp4">Only allow fMP4 transcoding</string>
     <string name="pref_exoplayer_restrict_transcoding_to_mp4_description">Never fall back to MPEG-TS/MKV when transcoding; Dolby Vision FEL sources will lose their enhancement layer instead of routing through TS to preserve it</string>
+    <string name="pref_exoplayer_restrict_transcoding_to_mkv">Only allow MKV transcoding (debug)</string>
+    <string name="pref_exoplayer_restrict_transcoding_to_mkv_description">Diagnostic toggle: forces every transcode through MKV instead of MPEG-TS or fMP4. Do not enable alongside \"Only allow fMP4 transcoding\"</string>
     <string name="pref_exoplayer_network_buffer">Playback buffer size</string>
     <string name="network_buffer_auto">Auto</string>
     <string name="network_buffer_auto_description">Default buffer, suitable for most playback scenarios</string>
