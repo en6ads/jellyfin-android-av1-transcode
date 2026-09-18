@@ -138,22 +138,28 @@ class DeviceProfileBuilder(
         val fmp4VideoCodecs = transcodeVideoCodecs("av1", "hevc", "h264")
         val tsVideoCodecs = transcodeVideoCodecs("hevc", "h264")
 
+        // Debug/diagnostic toggles below let only one video container through at a time, so the
+        // server has nothing else to fall back to. Both are for isolating ranking/playback
+        // behavior on real hardware, not meant to be on simultaneously.
+        val restrictToMp4 = appPreferences.exoPlayerRestrictTranscodingToMp4
+        val restrictToMkv = appPreferences.exoPlayerRestrictTranscodingToMkv
+
         return buildList {
-            add(
-                TranscodingProfile(
-                    type = DlnaProfileType.VIDEO,
-                    container = "mp4",
-                    videoCodec = fmp4VideoCodecs,
-                    audioCodec = transcodeAudioCodecs(maxBitrate, MP4_AUDIO_CODECS_COPY),
-                    protocol = MediaStreamProtocol.HLS,
-                    conditions = emptyList(),
-                ),
-            )
-            // Diagnostic/fallback-avoidance toggle: with nothing else declared, the server has no
-            // ts/mkv profile left to fall back to, so it's stuck with mp4 (or true direct play).
+            if (!restrictToMkv) {
+                add(
+                    TranscodingProfile(
+                        type = DlnaProfileType.VIDEO,
+                        container = "mp4",
+                        videoCodec = fmp4VideoCodecs,
+                        audioCodec = transcodeAudioCodecs(maxBitrate, MP4_AUDIO_CODECS_COPY),
+                        protocol = MediaStreamProtocol.HLS,
+                        conditions = emptyList(),
+                    ),
+                )
+            }
             // Dolby Vision FEL video copy only works through ts, so FEL sources lose their
-            // enhancement layer (full re-encode instead) while this is on.
-            if (!appPreferences.exoPlayerRestrictTranscodingToMp4) {
+            // enhancement layer (full re-encode instead) whenever ts isn't declared.
+            if (!restrictToMp4 && !restrictToMkv) {
                 add(
                     TranscodingProfile(
                         type = DlnaProfileType.VIDEO,
@@ -164,6 +170,8 @@ class DeviceProfileBuilder(
                         conditions = emptyList(),
                     ),
                 )
+            }
+            if (!restrictToMp4) {
                 add(
                     TranscodingProfile(
                         type = DlnaProfileType.VIDEO,
