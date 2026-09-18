@@ -116,6 +116,32 @@ class DeviceProfileBuilder(
     private fun transcodeAudioCodecs(maxBitrate: Int, copyCodecs: String, lowBitrateCopyCodecs: String = TRANSCODE_AUDIO_EFFICIENT): String =
         if (maxBitrate >= Constants.LOSSLESS_AUDIO_MIN_BITRATE) copyCodecs else lowBitrateCopyCodecs
 
+    /**
+     * Cap the transcode target's channel count when the bitrate ceiling is tight, gated on the
+     * same [Constants.LOSSLESS_AUDIO_MIN_BITRATE] threshold as [transcodeAudioCodecs] - the two
+     * decisions are really the same decision, so they share a threshold deliberately.
+     *
+     * Below that threshold, no source track is copy-eligible beyond
+     * [Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS], so multichannel audio is going to be
+     * re-encoded regardless. Letting it be re-encoded at 5.1 just spends the budget twice over:
+     * measured against a real 12.1 server at a 1.5 Mbps ceiling, the split was 1116 kbps video
+     * against 384 kbps of 6-channel AAC - over a quarter of the whole stream on channels the
+     * playback device downmixes anyway. The share grows as the ceiling drops, because the server
+     * scales audio down far less aggressively than video. Capping to stereo hands that back to
+     * the video encoder, which is where it is actually visible.
+     *
+     * At or above the threshold this returns null (no cap): there the copy lists mean a
+     * multichannel source track can pass through untouched, and forcing stereo would turn a
+     * free lossless copy into a pointless downmix - the exact opposite of the intent.
+     *
+     * Declared on the TranscodingProfile rather than as an AUDIO_CHANNELS CodecProfile condition
+     * on purpose: a CodecProfile condition is also evaluated for direct play, so it would push
+     * 5.1 sources that currently direct-play perfectly well into a needless transcode. The
+     * TranscodingProfile field only constrains streams that were already going to be transcoded.
+     */
+    private fun transcodeAudioChannels(maxBitrate: Int): String? =
+        if (maxBitrate >= Constants.LOSSLESS_AUDIO_MIN_BITRATE) null else TRANSCODE_MAX_AUDIO_CHANNELS
+
     private fun buildTranscodingProfiles(maxBitrate: Int): List<TranscodingProfile> {
         // fMP4 HLS can carry AV1/HEVC; MPEG-TS/MKV are the compatibility paths. Modern codecs
         // are only offered as encode targets when a hardware decoder exists for them.
@@ -152,6 +178,7 @@ class DeviceProfileBuilder(
                 videoCodec = fmp4VideoCodecs,
                 audioCodec = transcodeAudioCodecs(maxBitrate, MP4_AUDIO_CODECS_COPY, LOW_BITRATE_AUDIO_COPY),
                 protocol = MediaStreamProtocol.HLS,
+                maxAudioChannels = transcodeAudioChannels(maxBitrate),
                 conditions = emptyList(),
             ),
             TranscodingProfile(
@@ -160,6 +187,7 @@ class DeviceProfileBuilder(
                 videoCodec = tsVideoCodecs,
                 audioCodec = transcodeAudioCodecs(maxBitrate, TS_AUDIO_CODECS_COPY),
                 protocol = MediaStreamProtocol.HLS,
+                maxAudioChannels = transcodeAudioChannels(maxBitrate),
                 conditions = emptyList(),
             ),
             TranscodingProfile(
@@ -168,6 +196,7 @@ class DeviceProfileBuilder(
                 videoCodec = tsVideoCodecs,
                 audioCodec = transcodeAudioCodecs(maxBitrate, TS_AUDIO_CODECS_COPY),
                 protocol = MediaStreamProtocol.HLS,
+                maxAudioChannels = transcodeAudioChannels(maxBitrate),
                 conditions = emptyList(),
             ),
             TranscodingProfile(
@@ -363,6 +392,12 @@ class DeviceProfileBuilder(
         private const val DEFAULT_H264_MAX_LEVEL = "41"
 
         private const val TRANSCODE_AUDIO_EFFICIENT = "aac"
+
+        /**
+         * Channel cap applied to transcode targets under a tight bitrate ceiling, as the string
+         * the TranscodingProfile.MaxAudioChannels field expects. See [transcodeAudioChannels].
+         */
+        private const val TRANSCODE_MAX_AUDIO_CHANNELS = "2"
 
         /**
          * mp4-only: below [Constants.LOSSLESS_AUDIO_MIN_BITRATE], AAC still leads so it's what
