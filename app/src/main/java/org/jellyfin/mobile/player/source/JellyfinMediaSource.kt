@@ -148,6 +148,21 @@ sealed class JellyfinMediaSource(
         get() = audioStreams.firstOrNull { it.isDefault } ?: audioStreams.firstOrNull()
 
     /**
+     * Whether the selected video stream is Dolby Vision Profile 7 (dual-layer, base plus
+     * enhancement layer).
+     *
+     * Confirmed repeatedly on real hardware: a Profile 7 source handed to the player untouched
+     * renders a black screen, with both the hardware and software decoder toggles off making no
+     * difference. Critically, it is a SILENT failure - ExoPlayer raises no error, so
+     * [org.jellyfin.mobile.player.queue.QueueManager.restartPlaybackWithFallback] is never
+     * invoked and nothing recovers on its own. Direct play therefore has to be prevented before
+     * the server ever selects it, which is what
+     * [org.jellyfin.mobile.player.queue.QueueManager.startRemotePlayback] uses this for.
+     */
+    val isDolbyVisionProfile7: Boolean
+        get() = selectedVideoStream?.dvProfile == DOLBY_VISION_PROFILE_7
+
+    /**
      * Resolves which audio track a non-explicit resolve (i.e. not an actual user pick) should
      * pin for the given [maxBitrate], so the app never depends on the server's own default-track
      * tie-break (see [fileDefaultAudioStream]). Returns null only if the source has no audio at
