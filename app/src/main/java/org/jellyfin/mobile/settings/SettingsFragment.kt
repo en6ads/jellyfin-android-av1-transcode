@@ -173,6 +173,11 @@ class SettingsFragment : Fragment(), BackPressInterceptor {
             summaryRes = R.string.pref_exoplayer_direct_play_ass_description
             enabled = appPreferences.videoPlayerType == VideoPlayerType.EXO_PLAYER
         }
+        checkBox(Constants.PREF_EXOPLAYER_RESTRICT_TRANSCODING_TO_MP4) {
+            titleRes = R.string.pref_exoplayer_restrict_transcoding_to_mp4
+            summaryRes = R.string.pref_exoplayer_restrict_transcoding_to_mp4_description
+            enabled = appPreferences.videoPlayerType == VideoPlayerType.EXO_PLAYER
+        }
         val networkBufferOptions = listOf(
             SelectionItem(
                 Constants.NETWORK_BUFFER_AUTO,
