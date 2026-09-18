@@ -125,6 +125,17 @@ class AppPreferences(context: Context) {
     val exoPlayerDirectPlayAss: Boolean
         get() = sharedPreferences.getBoolean(Constants.PREF_EXOPLAYER_DIRECT_PLAY_ASS, false)
 
+    /**
+     * Debug/diagnostic toggle: when enabled, only the mp4 transcoding profile is offered to the
+     * server - the ts and mkv fallback profiles are dropped entirely. Useful for isolating
+     * whether a "never getting fmp4" symptom is a server-side ranking issue (server has no other
+     * option and must use mp4) versus something else, and as a hard guarantee against ever
+     * losing DV FEL... except FEL specifically still can't be preserved this way, since only ts
+     * can copy its enhancement layer - with ts removed, FEL sources just always lose the EL.
+     */
+    val exoPlayerRestrictTranscodingToMp4: Boolean
+        get() = sharedPreferences.getBoolean(Constants.PREF_EXOPLAYER_RESTRICT_TRANSCODING_TO_MP4, false)
+
     val exoPlayerNetworkBuffer: String
         get() = sharedPreferences.getString(Constants.PREF_EXOPLAYER_NETWORK_BUFFER, Constants.NETWORK_BUFFER_AUTO)!!
 

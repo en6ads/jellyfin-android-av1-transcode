@@ -138,40 +138,54 @@ class DeviceProfileBuilder(
         val fmp4VideoCodecs = transcodeVideoCodecs("av1", "hevc", "h264")
         val tsVideoCodecs = transcodeVideoCodecs("hevc", "h264")
 
-        return listOf(
-            TranscodingProfile(
-                type = DlnaProfileType.VIDEO,
-                container = "mp4",
-                videoCodec = fmp4VideoCodecs,
-                audioCodec = transcodeAudioCodecs(maxBitrate, MP4_AUDIO_CODECS_COPY),
-                protocol = MediaStreamProtocol.HLS,
-                conditions = emptyList(),
-            ),
-            TranscodingProfile(
-                type = DlnaProfileType.VIDEO,
-                container = "ts",
-                videoCodec = tsVideoCodecs,
-                audioCodec = transcodeAudioCodecs(maxBitrate, TS_AUDIO_CODECS_COPY),
-                protocol = MediaStreamProtocol.HLS,
-                conditions = emptyList(),
-            ),
-            TranscodingProfile(
-                type = DlnaProfileType.VIDEO,
-                container = "mkv",
-                videoCodec = tsVideoCodecs,
-                audioCodec = transcodeAudioCodecs(maxBitrate, TS_AUDIO_CODECS_COPY),
-                protocol = MediaStreamProtocol.HLS,
-                conditions = emptyList(),
-            ),
-            TranscodingProfile(
-                type = DlnaProfileType.AUDIO,
-                container = "mp3",
-                videoCodec = "",
-                audioCodec = "mp3",
-                protocol = MediaStreamProtocol.HTTP,
-                conditions = emptyList(),
-            ),
-        )
+        return buildList {
+            add(
+                TranscodingProfile(
+                    type = DlnaProfileType.VIDEO,
+                    container = "mp4",
+                    videoCodec = fmp4VideoCodecs,
+                    audioCodec = transcodeAudioCodecs(maxBitrate, MP4_AUDIO_CODECS_COPY),
+                    protocol = MediaStreamProtocol.HLS,
+                    conditions = emptyList(),
+                ),
+            )
+            // Diagnostic/fallback-avoidance toggle: with nothing else declared, the server has no
+            // ts/mkv profile left to fall back to, so it's stuck with mp4 (or true direct play).
+            // Dolby Vision FEL video copy only works through ts, so FEL sources lose their
+            // enhancement layer (full re-encode instead) while this is on.
+            if (!appPreferences.exoPlayerRestrictTranscodingToMp4) {
+                add(
+                    TranscodingProfile(
+                        type = DlnaProfileType.VIDEO,
+                        container = "ts",
+                        videoCodec = tsVideoCodecs,
+                        audioCodec = transcodeAudioCodecs(maxBitrate, TS_AUDIO_CODECS_COPY),
+                        protocol = MediaStreamProtocol.HLS,
+                        conditions = emptyList(),
+                    ),
+                )
+                add(
+                    TranscodingProfile(
+                        type = DlnaProfileType.VIDEO,
+                        container = "mkv",
+                        videoCodec = tsVideoCodecs,
+                        audioCodec = transcodeAudioCodecs(maxBitrate, TS_AUDIO_CODECS_COPY),
+                        protocol = MediaStreamProtocol.HLS,
+                        conditions = emptyList(),
+                    ),
+                )
+            }
+            add(
+                TranscodingProfile(
+                    type = DlnaProfileType.AUDIO,
+                    container = "mp3",
+                    videoCodec = "",
+                    audioCodec = "mp3",
+                    protocol = MediaStreamProtocol.HTTP,
+                    conditions = emptyList(),
+                ),
+            )
+        }
     }
 
     /**
