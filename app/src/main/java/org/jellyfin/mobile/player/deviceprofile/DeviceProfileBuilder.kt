@@ -277,46 +277,57 @@ class DeviceProfileBuilder(
                     value = profilesSet.joinToString("|"),
                     isRequired = false,
                 ),
-                // Dolby Vision Profile 7 (dual-layer, base + enhancement) isn't something a plain
-                // HEVC decoder can handle directly - excluding it is meant to force a real
-                // transcode instead of an unsafe direct-stream copy that would otherwise produce
-                // a black screen.
+                // TWO Dolby Vision range-type exclusions. They look like a redundant pair that
+                // could be collapsed into one. Do not collapse them - the redundancy is the
+                // mechanism, for the reason below.
                 //
-                // KNOWN GAP, confirmed on real hardware, currently unresolved: this CodecProfile
-                // is declared once per SUPPORTED_CONTAINER_FORMATS entry, which spells this
-                // particular container "mpegts" - but buildTranscodingProfiles() declares the
-                // actual transcoding path itself as "ts". Whatever string the server matches
-                // CodecProfile.Container against for that path, the two declarations disagree, so
-                // this exclusion silently never applies there. In practice a Profile 7 FEL source
-                // that lands on the "ts" transcoding path gets its video stream-copied
-                // (`-codec:v copy`) instead of re-encoded, tagged generically as plain "hvc1" (no
-                // DV claim) - and that copy happens to play fine on real hardware anyway, most
-                // likely because the decoder just ignores the enhancement-layer NAL units it
-                // doesn't recognize and decodes the valid, complete base layer alone as HDR10.
+                // StreamBuilder's ApplyTranscodingConditions builds the per-codec range list with
+                // SetOption, which OVERWRITES rather than intersects:
+                //     NotEquals -> SetOption(qualifier, "rangetype", AllNames.Except(values))
+                // so the SECOND condition below replaces the first. The surviving list therefore
+                // excludes only DOVIWithELHDR10Plus and still CONTAINS DOVIWithEL. Adding a
+                // condition here does not narrow the list, it replaces it.
                 //
-                // This was "fixed" once (declaring container = "mpegts,ts" so both spellings
-                // match) and reverted after confirming on real hardware that it made things
-                // worse, not better: the exclusion then correctly blocked the ts stream-copy, but
-                // the server's next choice wasn't a real re-encode either - it picked mp4 instead,
-                // which *also* just stream-copies the video, except tagged "dvh1" (explicitly
-                // claiming valid Dolby Vision). That's actively wrong for untouched dual-layer
-                // data and the client fails to parse it ("format null" error on device) - worse
-                // than the original silent gap. So the currently-working FEL playback is not the
-                // designed safe behavior; it's a side effect of this exclusion failing to apply,
-                // landing on a copy path that happens to be benign rather than one that isn't.
-                // A real fix needs the server to actually fall through to a genuine re-encode when
-                // a direct copy is disqualified for DV reasons, on whichever container ends up
-                // handling it - not something visible or fixable from this repo alone.
+                // On Jellyfin 12.0 that mattered: the server treated the list as the supported
+                // set, so a Profile 7 FEL source counted as supported and its video was COPIED
+                // (`-codec:v:0 copy`, tagged hvc1) rather than re-encoded, preserving the HDR10
+                // base layer untouched while the decoder ignored the enhancement-layer NAL units.
+                //
+                // On Jellyfin 12.1 that copy no longer happens, whatever is declared here. The
+                // same app binary that copied under 12.0 re-encodes under 12.1 with the same
+                // file, audio stream, container and bitrate headroom - a server regression, not
+                // something this profile can steer. These conditions are kept in their 12.0 shape
+                // because it is the only form known to produce the copy on any server version,
+                // and the tidier alternatives are strictly worse or no better:
+                //   two NOT_EQUALS (this)        -> list keeps DOVIWithEL  -> copy on 12.0
+                //   one NOT_EQUALS               -> list excludes it       -> re-encode, SDR
+                //   EQUALS_ANY allow-list        -> list excludes it       -> re-encode, SDR
+                //   no condition at all          -> no list                -> re-encode, SDR
+                //   condition on TranscodingProfile -> silently discarded, since
+                //       ApplyTranscodingConditions skips VIDEO_RANGE_TYPE when the qualifier is
+                //       empty and only CodecProfile conditions carry a codec qualifier
+                // All five were built and tested on real hardware against a 12.1 server.
+                //
+                // A consequence worth stating plainly: because the list keeps DOVIWithEL, the
+                // server never strips the enhancement layer (ShouldRemoveDynamicHdrMetadata needs
+                // !requestHasDOVIwithEL). remove_dovi is unreachable from a client device profile
+                // for a DOVIWithEL source - any condition that would exclude it from the list also
+                // disqualifies the codec, and the strip only runs on the copy path. Where a copy
+                // is obtainable at all, the EL staying in the stream is the price of it.
+                //
+                // This does NOT keep Profile 7 out of direct play - that is done in QueueManager by
+                // re-resolving with enableDirectPlay = false, because a Profile 7 direct play fails
+                // SILENTLY with a black screen and no error for any fallback to catch.
                 ProfileCondition(
                     condition = ProfileConditionType.NOT_EQUALS,
                     property = ProfileConditionValue.VIDEO_RANGE_TYPE,
-                    value = "DOVIWithEL",
+                    value = VIDEO_RANGE_TYPE_DOVI_WITH_EL,
                     isRequired = false,
                 ),
                 ProfileCondition(
                     condition = ProfileConditionType.NOT_EQUALS,
                     property = ProfileConditionValue.VIDEO_RANGE_TYPE,
-                    value = "DOVIWithELHDR10Plus",
+                    value = VIDEO_RANGE_TYPE_DOVI_WITH_EL_HDR10_PLUS,
                     isRequired = false,
                 ),
             ),
@@ -361,6 +372,20 @@ class DeviceProfileBuilder(
     companion object {
         private const val EXTERNAL_PLAYER_PROFILE_NAME = Constants.APP_INFO_NAME + " External Player"
         private const val DEFAULT_H264_MAX_LEVEL = "41"
+
+        /**
+         * Dolby Vision Profile 7 dual-layer, declared first of the two range-type exclusions in
+         * [generateCodecProfile]. Both are required; see the comment there before changing either.
+         */
+        private const val VIDEO_RANGE_TYPE_DOVI_WITH_EL = "DOVIWithEL"
+
+        /**
+         * Declared second, and therefore the one that actually survives into the server's range
+         * list - SetOption overwrites rather than intersects, leaving a list that still contains
+         * [VIDEO_RANGE_TYPE_DOVI_WITH_EL], which is what keeps Profile 7 FEL on the stream-copy
+         * path. See [generateCodecProfile]; this ordering is load-bearing, not incidental.
+         */
+        private const val VIDEO_RANGE_TYPE_DOVI_WITH_EL_HDR10_PLUS = "DOVIWithELHDR10Plus"
 
         private const val TRANSCODE_AUDIO_EFFICIENT = "aac"
 
