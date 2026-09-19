@@ -137,6 +137,38 @@ object Constants {
     const val LOSSLESS_AUDIO_MIN_BITRATE = 25_000_000 // 25 Mbps
 
     /**
+     * Client streaming bitrate ceiling, in bits per second, below which transcoded audio is
+     * capped to stereo. Deliberately a lower, separate threshold from
+     * [LOSSLESS_AUDIO_MIN_BITRATE] rather than reusing it: the two answer different questions.
+     * That one asks "is there budget to copy a lossless track"; this one asks "is there budget to
+     * carry more than two channels at all".
+     *
+     * Below this, multichannel audio is a bad trade. Measured against a real server at a 1.5 Mbps
+     * ceiling, the split was 1116 kbps video against 384 kbps of 6-channel AAC - over a quarter
+     * of the stream spent on channels a phone downmixes anyway, and the share grows as the
+     * ceiling drops because the server scales audio down far less aggressively than video.
+     *
+     * Between this and [LOSSLESS_AUDIO_MIN_BITRATE] there is room for multichannel but not for a
+     * lossless copy, which is exactly the band where an already-efficient EAC3/JOC track can be
+     * copied through intact - see [MP4_LOW_BITRATE_AUDIO_COPY_CODECS]. Lowering this value would
+     * eat into that band; raising it above [LOSSLESS_AUDIO_MIN_BITRATE] would make that band
+     * unreachable entirely.
+     */
+    const val MULTICHANNEL_AUDIO_MIN_BITRATE = 10_000_000 // 10 Mbps
+
+    /**
+     * Ceiling for transcoded stereo audio, in bits per second, applied below
+     * [MULTICHANNEL_AUDIO_MIN_BITRATE] where the channel cap is already in force. Without it the
+     * server keeps allocating a multichannel-sized audio budget to a two-channel stream - the
+     * point of the downmix is to hand that budget back to the video encoder, which only happens
+     * if the audio allocation actually shrinks with it.
+     *
+     * 128 kbps is transparent enough for stereo AAC on a phone; the video bitrate it frees is
+     * far more visible than the difference between this and a higher figure.
+     */
+    const val STEREO_AUDIO_MAX_BITRATE = 128_000 // 128 kbps
+
+    /**
      * Audio codecs mp4 can actually copy (not re-encode) once [LOSSLESS_AUDIO_MIN_BITRATE] is
      * met - matches DeviceProfileBuilder's MP4_AUDIO_CODECS_COPY exactly (single source of
      * truth, shared with JellyfinMediaSource's own audio-track preference logic).

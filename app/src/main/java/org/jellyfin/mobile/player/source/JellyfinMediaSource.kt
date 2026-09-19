@@ -202,6 +202,15 @@ sealed class JellyfinMediaSource(
         val fileDefault = fileDefaultAudioStream ?: return null
         if (maxBitrate == null || selectedVideoStream?.dvProfile == DOLBY_VISION_PROFILE_7) return fileDefault
 
+        // Below the stereo cap the same reasoning as the DV7 pass-through above applies, for the
+        // same reason: no copy is possible, so steering towards a copy-eligible track is not just
+        // pointless but actively worse. DeviceProfileBuilder caps transcoded audio to two channels
+        // under this ceiling, and a downmix forces a re-encode no matter which track is chosen -
+        // so preferring an EAC3/JOC track over the file's own lossless default would stack a
+        // second lossy generation on an already-lossy source, where leaving the default alone
+        // gives a single-generation lossless-to-AAC re-encode instead.
+        if (maxBitrate < Constants.MULTICHANNEL_AUDIO_MIN_BITRATE) return fileDefault
+
         val isBitrateCapped = maxBitrate < Constants.LOSSLESS_AUDIO_MIN_BITRATE
         val copyEligibleCodecs = if (isBitrateCapped) Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS else Constants.MP4_AUDIO_COPY_CODECS
         if (fileDefault.codec?.lowercase() in copyEligibleCodecs) return fileDefault
