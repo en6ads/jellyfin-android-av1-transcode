@@ -125,6 +125,24 @@ class AppPreferences(context: Context) {
     val exoPlayerDirectPlayAss: Boolean
         get() = sharedPreferences.getBoolean(Constants.PREF_EXOPLAYER_DIRECT_PLAY_ASS, false)
 
+    /**
+     * Whether this device is claimed to decode Dolby Vision Profile 7 (dual-layer) itself.
+     *
+     * Defaults to false, and that default is deliberate: Android's MediaCodec does not report
+     * enhancement-layer support even on hardware where it demonstrably works, so there is nothing
+     * reliable to detect. jellyfin-androidtv reached the same conclusion and resorted to a
+     * hardcoded per-model allow-list (`KnownDefects.unreportedDoviProfile7Support`, currently just
+     * "SHIELD Android TV") plus a manual user override. This preference is that override, without
+     * the allow-list.
+     *
+     * Leaving it off tells the server the device cannot present Profile 7, and keeps such sources
+     * off the direct play path - which on most devices renders a silent black screen. Turning it
+     * on is for hardware genuinely able to decode dual-layer streams; on anything else it will
+     * produce that black screen, which is why it is opt-in rather than detected.
+     */
+    val exoPlayerAllowDolbyVisionProfile7: Boolean
+        get() = sharedPreferences.getBoolean(Constants.PREF_EXOPLAYER_ALLOW_DV_PROFILE_7, false)
+
     val exoPlayerNetworkBuffer: String
         get() = sharedPreferences.getString(Constants.PREF_EXOPLAYER_NETWORK_BUFFER, Constants.NETWORK_BUFFER_AUTO)!!
 
