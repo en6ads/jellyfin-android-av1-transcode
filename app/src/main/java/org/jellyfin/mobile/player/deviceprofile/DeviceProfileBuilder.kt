@@ -318,6 +318,26 @@ class DeviceProfileBuilder(
                 // This does NOT keep Profile 7 out of direct play - that is done in QueueManager by
                 // re-resolving with enableDirectPlay = false, because a Profile 7 direct play fails
                 // SILENTLY with a black screen and no error for any fallback to catch.
+                *dolbyVisionProfile7Conditions(),
+            ),
+        )
+    }
+
+    /**
+     * The Profile 7 exclusions, or nothing when
+     * [AppPreferences.exoPlayerAllowDolbyVisionProfile7] says this device can decode dual-layer
+     * streams itself.
+     *
+     * Emitted as a pair rather than a single condition for the reason documented in
+     * [generateCodecProfile] - the ordering is load-bearing, so if either is ever removed the
+     * other must go too, which is why they are produced together here rather than assembled by
+     * whatever calls this.
+     */
+    private fun dolbyVisionProfile7Conditions(): Array<ProfileCondition> =
+        if (appPreferences.exoPlayerAllowDolbyVisionProfile7) {
+            emptyArray()
+        } else {
+            arrayOf(
                 ProfileCondition(
                     condition = ProfileConditionType.NOT_EQUALS,
                     property = ProfileConditionValue.VIDEO_RANGE_TYPE,
@@ -330,9 +350,8 @@ class DeviceProfileBuilder(
                     value = VIDEO_RANGE_TYPE_DOVI_WITH_EL_HDR10_PLUS,
                     isRequired = false,
                 ),
-            ),
-        )
-    }
+            )
+        }
 
     private fun getSubtitleProfiles(embedded: Array<String>, external: Array<String>): List<SubtitleProfile> = ArrayList<SubtitleProfile>().apply {
         for (format in embedded) {

@@ -11,6 +11,7 @@ import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.jellyfin.mobile.app.AppPreferences
 import org.jellyfin.mobile.data.dao.DownloadDao
 import org.jellyfin.mobile.downloads.DownloadFileType
 import org.jellyfin.mobile.player.PlayerException
@@ -49,6 +50,7 @@ class QueueManager(
     private val mediaSourceResolver: MediaSourceResolver by inject()
     private val deviceProfileBuilder: DeviceProfileBuilder by inject()
     private val downloadDao: DownloadDao by inject()
+    private val appPreferences: AppPreferences by inject()
 
     private var currentQueue: List<UUID> = emptyList()
     private var currentQueueIndex: Int = 0
@@ -203,7 +205,13 @@ class QueueManager(
             //
             // Guarded on enableDirectPlay != false so the re-resolve cannot recurse: the second
             // pass passes false, and the server cannot answer it with DIRECT_PLAY again.
+            // Skipped entirely when the user has declared this device able to decode dual-layer
+            // streams (AppPreferences.exoPlayerAllowDolbyVisionProfile7) - on that hardware direct
+            // play is the desired outcome, and DeviceProfileBuilder correspondingly stops telling
+            // the server Profile 7 is unsupported. The two must agree; enabling one without the
+            // other produces a profile that advertises support while the client refuses to use it.
             if (enableDirectPlay != false &&
+                !appPreferences.exoPlayerAllowDolbyVisionProfile7 &&
                 jellyfinMediaSource.playMethod == PlayMethod.DIRECT_PLAY &&
                 jellyfinMediaSource.isDolbyVisionProfile7
             ) {
