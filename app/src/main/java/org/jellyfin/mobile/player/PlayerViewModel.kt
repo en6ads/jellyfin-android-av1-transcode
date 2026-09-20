@@ -776,6 +776,53 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
         playerOrNull?.updateSkipMediaSegmentButton()
     }
 
+    /**
+     * Turn a [PlaybackException] into something a user can act on.
+     *
+     * Previously this posted `error.localizedMessage`, which for the whole IO family is the bare
+     * string "Source error" - the same text whether the connection dropped, the server returned
+     * 404, or the container failed to parse. That is actively misleading on a slow or unstable
+     * link, where the overwhelmingly common cause is a timed-out segment fetch and the useful
+     * advice is "lower the quality", not "something went wrong".
+     *
+     * [PlaybackException.errorCode] already distinguishes these; nothing was reading it. The
+     * fallback branch deliberately includes [PlaybackException.errorCodeName] rather than a
+     * generic message: an unmapped code is far easier to act on when the name is visible
+     * (ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT says everything "Source error" does not).
+     */
+    private fun describePlaybackError(error: PlaybackException): String = when (error.errorCode) {
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+        PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
+        -> getApplication<Application>().getString(R.string.player_error_connection_too_slow)
+
+        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+        PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+        -> getApplication<Application>().getString(R.string.player_error_connection_lost)
+
+        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+        PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+        PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
+        PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE,
+        -> getApplication<Application>().getString(R.string.player_error_server_rejected)
+
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+        PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
+        -> getApplication<Application>().getString(R.string.player_error_stream_unreadable)
+
+        PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+        PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+        PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
+        -> getApplication<Application>().getString(R.string.player_error_unsupported_content)
+
+        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+        PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+        PlaybackException.ERROR_CODE_DECODING_FAILED,
+        -> getApplication<Application>().getString(R.string.player_error_decoder_failed)
+
+        else -> getApplication<Application>().getString(R.string.player_error_with_code, error.errorCodeName)
+    }
+
     override fun onPlayerError(error: PlaybackException) {
         if (error.cause is MediaCodecDecoderException && !fallbackPreferExtensionRenderers) {
             Timber.e(error.cause, "Decoder failed, attempting to restart playback with decoder extensions preferred")
@@ -787,13 +834,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
             setupPlayer()
             queueManager.tryRestartPlayback()
         } else {
-            Timber.w(error, "Playback error, attempting fallback")
+            Timber.w(error, "Playback error (%s), attempting fallback", error.errorCodeName)
             val startPosition = (playerOrNull?.currentPosition ?: 0L).milliseconds
             fallbackRetryJob?.cancel()
             fallbackRetryJob = viewModelScope.launch {
                 val retried = queueManager.restartPlaybackWithFallback(startPosition)
                 if (!retried) {
-                    _error.postValue(error.localizedMessage.orEmpty())
+                    _error.postValue(describePlaybackError(error))
                 }
             }
         }
