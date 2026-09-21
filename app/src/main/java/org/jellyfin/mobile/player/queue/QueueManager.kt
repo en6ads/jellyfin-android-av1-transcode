@@ -66,9 +66,16 @@ class QueueManager(
      * Handle initial playback options from fragment.
      * Start of a playback session that can contain one or multiple played videos.
      *
+     * @param bitrateOverride a ceiling in bits per second chosen by the user before playback
+     * started, which takes precedence over the web client's own quality setting. Null leaves
+     * that setting in charge, which is the behaviour when the pre-playback prompt is off.
      * @return an error of type [PlayerException] or null on success.
      */
-    suspend fun initializePlaybackQueue(playOptions: PlayOptions, preferences: PlayerWebPreferences? = null): PlayerException? {
+    suspend fun initializePlaybackQueue(
+        playOptions: PlayOptions,
+        preferences: PlayerWebPreferences? = null,
+        bitrateOverride: Int? = null,
+    ): PlayerException? {
         currentQueue = playOptions.ids
         currentQueueIndex = playOptions.startIndex
         resetPlaybackFallback()
@@ -78,7 +85,10 @@ class QueueManager(
             else -> playOptions.mediaSourceId?.toUUIDOrNull()
         } ?: return PlayerException.InvalidPlayOptions()
 
-        val maxStreamingBitrate = preferences?.let {
+        // An explicit choice wins outright, and notably skips the getEndpointInfo round trip:
+        // the local/remote distinction only exists to pick between two configured ceilings, and
+        // the user has just named the one they want.
+        val maxStreamingBitrate = bitrateOverride ?: preferences?.let {
             withContext(Dispatchers.IO) {
                 runCatching {
                     val endpoint by apiClient.systemApi.getEndpointInfo()
