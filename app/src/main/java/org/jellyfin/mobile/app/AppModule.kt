@@ -61,6 +61,18 @@ import java.io.File
 const val PLAYER_EVENT_CHANNEL = "PlayerEventChannel"
 private const val TS_SEARCH_PACKETS = 1800
 
+/**
+ * Connect timeout for media HTTP requests. media3 defaults to 8s, which a transcoding server on
+ * a high-latency link can exceed before it has produced anything to send.
+ */
+private const val DATA_SOURCE_CONNECT_TIMEOUT_MS = 30_000
+
+/**
+ * Read timeout for media HTTP requests, for the same reason. See the comment at the call site:
+ * an HLS segment request can sit with no bytes flowing while the segment is still being encoded.
+ */
+private const val DATA_SOURCE_READ_TIMEOUT_MS = 60_000
+
 val applicationModule = module {
     single { AppPreferences(androidApplication()) }
     single { OkHttpClient() }
@@ -119,6 +131,24 @@ val applicationModule = module {
 
         val baseDataSourceFactory = DefaultHttpDataSource.Factory().apply {
             setUserAgent(Util.getUserAgent(context, Constants.APP_INFO_NAME))
+
+            // media3 defaults to 8s for both, which is too short for a transcoded HLS stream on
+            // a high-latency link. A segment request can block with no bytes flowing at all
+            // while the server produces that segment - ffmpeg start-up, or simply not having
+            // encoded that far yet - and only then does the transfer begin. Measured against a
+            // real server over a cellular tailnet: responses of 8.3s for a request, and 1.2-2.6s
+            // just for a few-kilobyte fMP4 initialisation segment.
+            //
+            // Past the default the load fails as ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT, which
+            // surfaces to the user as a bare "source error". It presents as the client fetching
+            // the init segment over and over and never reaching a media segment, and it does not
+            // improve when the bitrate is lowered, because the delay is the server's
+            // time-to-first-byte rather than the segment size.
+            //
+            // Direct play is unaffected, which is what makes this look mysterious: a progressive
+            // download streams continuously, so no single read ever approaches the timeout.
+            setConnectTimeoutMs(DATA_SOURCE_CONNECT_TIMEOUT_MS)
+            setReadTimeoutMs(DATA_SOURCE_READ_TIMEOUT_MS)
         }
 
         val dataSourceFactory = DefaultDataSource.Factory(context, baseDataSourceFactory)
