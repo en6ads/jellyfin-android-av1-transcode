@@ -8,14 +8,15 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.TsExtractor
 import androidx.work.WorkManager
@@ -57,6 +58,7 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 const val PLAYER_EVENT_CHANNEL = "PlayerEventChannel"
 private const val TS_SEARCH_PACKETS = 1800
@@ -65,13 +67,25 @@ private const val TS_SEARCH_PACKETS = 1800
  * Connect timeout for media HTTP requests. media3 defaults to 8s, which a transcoding server on
  * a high-latency link can exceed before it has produced anything to send.
  */
-private const val DATA_SOURCE_CONNECT_TIMEOUT_MS = 30_000
+private const val DATA_SOURCE_CONNECT_TIMEOUT_SECONDS = 30L
 
 /**
- * Read timeout for media HTTP requests, for the same reason. See the comment at the call site:
- * an HLS segment request can sit with no bytes flowing while the segment is still being encoded.
+ * Read timeout for media HTTP requests, for the same reason: an HLS segment request can sit
+ * with no bytes flowing while the segment is still being encoded.
  */
-private const val DATA_SOURCE_READ_TIMEOUT_MS = 60_000
+private const val DATA_SOURCE_READ_TIMEOUT_SECONDS = 60L
+
+/**
+ * How many times a single chunk load may fail before the error is escalated to a fatal player
+ * error. media3's default is 3.
+ *
+ * Escalation is expensive here in a way it is not on an ordinary connection: a fatal error tears
+ * the session down and restarts it with a fresh PlaySessionId, which makes the server kill its
+ * ffmpeg process and start a new one from scratch. A transient socket failure therefore throws
+ * away a perfectly good transcode. Retrying the chunk a few more times costs a few seconds;
+ * escalating costs the whole transcode.
+ */
+private const val MINIMUM_LOADABLE_RETRY_COUNT = 6
 
 val applicationModule = module {
     single { AppPreferences(androidApplication()) }
@@ -129,15 +143,28 @@ val applicationModule = module {
         val context: Context = get()
         val apiClient: ApiClient = get()
 
-        val baseDataSourceFactory = DefaultHttpDataSource.Factory().apply {
-            setUserAgent(Util.getUserAgent(context, Constants.APP_INFO_NAME))
-
+        // OkHttp rather than media3's default DefaultHttpDataSource, which is backed by
+        // HttpURLConnection. HttpURLConnection pools connections but does not reliably detect a
+        // pooled socket the peer has already dropped: the next request over it fails
+        // immediately, surfacing as ERROR_CODE_IO_NETWORK_CONNECTION_FAILED rather than a
+        // timeout. That is the exact shape of the failure seen on this setup - a request
+        // succeeds, and the very next one dies about a second later, far too fast to be a
+        // timeout. A tunnelled link whose underlying path can change mid-session (a tailnet
+        // moving between a relay and a direct route) kills idle sockets that way routinely.
+        //
+        // OkHttp's retryOnConnectionFailure handles precisely this case: a request that fails on
+        // a stale pooled connection is transparently retried on a fresh one. It is on by
+        // default; it is set explicitly here because it is the reason for the swap.
+        val okHttpClient = get<OkHttpClient>().newBuilder()
+            .connectTimeout(DATA_SOURCE_CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             // media3 defaults to 8s for both, which is too short for a transcoded HLS stream on
             // a high-latency link. A segment request can block with no bytes flowing at all
             // while the server produces that segment - ffmpeg start-up, or simply not having
             // encoded that far yet - and only then does the transfer begin. Measured against a
             // real server over a cellular tailnet: responses of 8.3s for a request, and 1.2-2.6s
-            // just for a few-kilobyte fMP4 initialisation segment.
+            // just for a few-kilobyte fMP4 initialisation segment. Measured again from the
+            // server to itself, with no network in the path at all: 2.1s and 3.7s for that same
+            // init segment, so several seconds of it is the encoder starting, not the link.
             //
             // Past the default the load fails as ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT, which
             // surfaces to the user as a bare "source error". It presents as the client fetching
@@ -147,8 +174,13 @@ val applicationModule = module {
             //
             // Direct play is unaffected, which is what makes this look mysterious: a progressive
             // download streams continuously, so no single read ever approaches the timeout.
-            setConnectTimeoutMs(DATA_SOURCE_CONNECT_TIMEOUT_MS)
-            setReadTimeoutMs(DATA_SOURCE_READ_TIMEOUT_MS)
+            .readTimeout(DATA_SOURCE_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
+
+        // Timeouts live on the OkHttp client above, not here.
+        val baseDataSourceFactory = OkHttpDataSource.Factory(okHttpClient).apply {
+            setUserAgent(Util.getUserAgent(context, Constants.APP_INFO_NAME))
         }
 
         val dataSourceFactory = DefaultDataSource.Factory(context, baseDataSourceFactory)
@@ -199,6 +231,8 @@ val applicationModule = module {
             )
         }
 
+        val loadErrorHandlingPolicy = DefaultLoadErrorHandlingPolicy(MINIMUM_LOADABLE_RETRY_COUNT)
+
         val appPreferences: AppPreferences = get()
         if (appPreferences.exoPlayerDirectPlayAss) {
             val assHandler: AssHandler = get()
@@ -206,8 +240,10 @@ val applicationModule = module {
             val assExtractorsFactory = extractorsFactory.withAssMkvSupport(assSubtitleParserFactory, assHandler)
             DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), assExtractorsFactory)
                 .setSubtitleParserFactory(assSubtitleParserFactory)
+                .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         } else {
             DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), extractorsFactory)
+                .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         }
     }
 
