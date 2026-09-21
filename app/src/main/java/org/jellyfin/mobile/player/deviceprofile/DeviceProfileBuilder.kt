@@ -375,24 +375,44 @@ class DeviceProfileBuilder(
                 // This does NOT keep Profile 7 out of direct play - that is done in QueueManager by
                 // re-resolving with enableDirectPlay = false, because a Profile 7 direct play fails
                 // SILENTLY with a black screen and no error for any fallback to catch.
-                *dolbyVisionProfile7Conditions(),
+                *videoRangeTypeConditions(),
             ),
         )
     }
 
     /**
-     * The Profile 7 exclusions, or nothing when
-     * [AppPreferences.exoPlayerAllowDolbyVisionProfile7] says this device can decode dual-layer
-     * streams itself.
+     * The video range conditions: the Profile 7 exclusions, or a plain declaration of what this
+     * device can present when [AppPreferences.exoPlayerAllowDolbyVisionProfile7] says it decodes
+     * dual-layer streams itself.
      *
-     * Emitted as a pair rather than a single condition for the reason documented in
-     * [generateCodecProfile] - the ordering is load-bearing, so if either is ever removed the
-     * other must go too, which is why they are produced together here rather than assembled by
-     * whatever calls this.
+     * Both branches must emit *some* VIDEO_RANGE_TYPE condition, and that is the whole point of
+     * this function. The server only learns which ranges a client supports from a CodecProfile
+     * condition on this property - there is nowhere else in a device profile to state it. So the
+     * range list the server sees is a side effect of whatever is emitted here, and when this
+     * returned an empty array the client silently stopped declaring HDR support at all.
+     *
+     * That had a consequence nothing in the name would suggest: with the preference enabled, a
+     * server willing to transcode HDR to HDR had no declared range to match against and fell back
+     * to tone-mapping to SDR. Enabling "this device handles Profile 7" therefore *lost* HDR on
+     * every source, which is the opposite of what anyone turning it on wants. Hence the explicit
+     * allow-list below rather than nothing: it satisfies every source, so it disqualifies no
+     * codec, and it exists purely so the declaration reaches the server.
+     *
+     * The disabled branch is emitted as a pair rather than a single condition for the reason
+     * documented in [generateCodecProfile] - the ordering is load-bearing, so if either is ever
+     * removed the other must go too, which is why they are produced together here rather than
+     * assembled by whatever calls this.
      */
-    private fun dolbyVisionProfile7Conditions(): Array<ProfileCondition> =
+    private fun videoRangeTypeConditions(): Array<ProfileCondition> =
         if (appPreferences.exoPlayerAllowDolbyVisionProfile7) {
-            emptyArray()
+            arrayOf(
+                ProfileCondition(
+                    condition = ProfileConditionType.EQUALS_ANY,
+                    property = ProfileConditionValue.VIDEO_RANGE_TYPE,
+                    value = ALL_VIDEO_RANGE_TYPES,
+                    isRequired = false,
+                ),
+            )
         } else {
             arrayOf(
                 ProfileCondition(
@@ -462,6 +482,19 @@ class DeviceProfileBuilder(
          * path. See [generateCodecProfile]; this ordering is load-bearing, not incidental.
          */
         private const val VIDEO_RANGE_TYPE_DOVI_WITH_EL_HDR10_PLUS = "DOVIWithELHDR10Plus"
+
+        /**
+         * Every range type the server knows, used as an allow-list that excludes nothing.
+         *
+         * Its job is not to restrict anything - it is the only way to make the server emit a
+         * range list at all, which a server capable of preserving HDR needs in order to match the
+         * output range against something the client has claimed. Matching the server's own
+         * VideoRangeType enum exactly matters: a value the server does not recognise is dropped
+         * rather than rejected, so a typo here degrades silently to tone-mapped SDR.
+         */
+        private const val ALL_VIDEO_RANGE_TYPES =
+            "Unknown|SDR|HDR10|HLG|DOVI|DOVIWithHDR10|DOVIWithHLG|DOVIWithSDR|DOVIWithEL|" +
+                "DOVIWithHDR10Plus|DOVIWithELHDR10Plus|DOVIInvalid|HDR10Plus"
 
         private const val TRANSCODE_AUDIO_EFFICIENT = "aac"
 
