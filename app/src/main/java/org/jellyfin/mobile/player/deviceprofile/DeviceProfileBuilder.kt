@@ -334,101 +334,35 @@ class DeviceProfileBuilder(
                     value = profilesSet.joinToString("|"),
                     isRequired = false,
                 ),
-                // TWO Dolby Vision range-type exclusions. They look like a redundant pair that
-                // could be collapsed into one. Do not collapse them - the redundancy is the
-                // mechanism, for the reason below.
+                // A plain declaration of the video ranges this device can present. It excludes
+                // nothing, so it is satisfied by every source and disqualifies no codec.
                 //
-                // StreamBuilder's ApplyTranscodingConditions builds the per-codec range list with
-                // SetOption, which OVERWRITES rather than intersects:
-                //     NotEquals -> SetOption(qualifier, "rangetype", AllNames.Except(values))
-                // so the SECOND condition below replaces the first. The surviving list therefore
-                // excludes only DOVIWithELHDR10Plus and still CONTAINS DOVIWithEL. Adding a
-                // condition here does not narrow the list, it replaces it.
+                // It used to be a pair of Dolby Vision NOT_EQUALS exclusions instead, aimed at
+                // keeping Profile 7 FEL on Jellyfin 12.0's stream-copy path. That copy stopped
+                // happening under 12.1 whatever is declared here, so the exclusions no longer
+                // bought anything - and they cost a great deal, because a CodecProfile only
+                // applies when its conditions are SATISFIED. For a DOVIWithEL source they were
+                // not, so the entire profile was discarded, which:
+                //   - disqualified av1 and hevc, routing Profile 7 to the ts/h264 fallback, and
+                //   - took the range declaration with it, leaving the server nothing to match
+                //     against, so an HDR-preserving server tone-mapped to SDR anyway.
+                // Measured on a Profile 7 title: ts/hevc_qsv, tonemap_opencl, nv12 out. The same
+                // title with these exclusions gone: fmp4/av1_qsv, no tonemap, p010 out.
                 //
-                // On Jellyfin 12.0 that mattered: the server treated the list as the supported
-                // set, so a Profile 7 FEL source counted as supported and its video was COPIED
-                // (`-codec:v:0 copy`, tagged hvc1) rather than re-encoded, preserving the HDR10
-                // base layer untouched while the decoder ignored the enhancement-layer NAL units.
-                //
-                // On Jellyfin 12.1 that copy no longer happens, whatever is declared here. The
-                // same app binary that copied under 12.0 re-encodes under 12.1 with the same
-                // file, audio stream, container and bitrate headroom - a server regression, not
-                // something this profile can steer. These conditions are kept in their 12.0 shape
-                // because it is the only form known to produce the copy on any server version,
-                // and the tidier alternatives are strictly worse or no better:
-                //   two NOT_EQUALS (this)        -> list keeps DOVIWithEL  -> copy on 12.0
-                //   one NOT_EQUALS               -> list excludes it       -> re-encode, SDR
-                //   EQUALS_ANY allow-list        -> list excludes it       -> re-encode, SDR
-                //   no condition at all          -> no list                -> re-encode, SDR
-                //   condition on TranscodingProfile -> silently discarded, since
-                //       ApplyTranscodingConditions skips VIDEO_RANGE_TYPE when the qualifier is
-                //       empty and only CodecProfile conditions carry a codec qualifier
-                // All five were built and tested on real hardware against a 12.1 server.
-                //
-                // A consequence worth stating plainly: because the list keeps DOVIWithEL, the
-                // server never strips the enhancement layer (ShouldRemoveDynamicHdrMetadata needs
-                // !requestHasDOVIwithEL). remove_dovi is unreachable from a client device profile
-                // for a DOVIWithEL source - any condition that would exclude it from the list also
-                // disqualifies the codec, and the strip only runs on the copy path. Where a copy
-                // is obtainable at all, the EL staying in the stream is the price of it.
-                //
-                // This does NOT keep Profile 7 out of direct play - that is done in QueueManager by
-                // re-resolving with enableDirectPlay = false, because a Profile 7 direct play fails
-                // SILENTLY with a black screen and no error for any fallback to catch.
-                *videoRangeTypeConditions(),
-            ),
-        )
-    }
-
-    /**
-     * The video range conditions: the Profile 7 exclusions, or a plain declaration of what this
-     * device can present when [AppPreferences.exoPlayerAllowDolbyVisionProfile7] says it decodes
-     * dual-layer streams itself.
-     *
-     * Both branches must emit *some* VIDEO_RANGE_TYPE condition, and that is the whole point of
-     * this function. The server only learns which ranges a client supports from a CodecProfile
-     * condition on this property - there is nowhere else in a device profile to state it. So the
-     * range list the server sees is a side effect of whatever is emitted here, and when this
-     * returned an empty array the client silently stopped declaring HDR support at all.
-     *
-     * That had a consequence nothing in the name would suggest: with the preference enabled, a
-     * server willing to transcode HDR to HDR had no declared range to match against and fell back
-     * to tone-mapping to SDR. Enabling "this device handles Profile 7" therefore *lost* HDR on
-     * every source, which is the opposite of what anyone turning it on wants. Hence the explicit
-     * allow-list below rather than nothing: it satisfies every source, so it disqualifies no
-     * codec, and it exists purely so the declaration reaches the server.
-     *
-     * The disabled branch is emitted as a pair rather than a single condition for the reason
-     * documented in [generateCodecProfile] - the ordering is load-bearing, so if either is ever
-     * removed the other must go too, which is why they are produced together here rather than
-     * assembled by whatever calls this.
-     */
-    private fun videoRangeTypeConditions(): Array<ProfileCondition> =
-        if (appPreferences.exoPlayerAllowDolbyVisionProfile7) {
-            arrayOf(
+                // Direct play of Profile 7 is NOT what these were protecting. QueueManager does
+                // that independently, re-resolving with enableDirectPlay = false, because such a
+                // direct play fails SILENTLY with a black screen and no error to catch. That
+                // guard is gated on the same preference, so the two still agree - the profile no
+                // longer has to lie about what the device supports in order to get there.
                 ProfileCondition(
                     condition = ProfileConditionType.EQUALS_ANY,
                     property = ProfileConditionValue.VIDEO_RANGE_TYPE,
                     value = ALL_VIDEO_RANGE_TYPES,
                     isRequired = false,
                 ),
-            )
-        } else {
-            arrayOf(
-                ProfileCondition(
-                    condition = ProfileConditionType.NOT_EQUALS,
-                    property = ProfileConditionValue.VIDEO_RANGE_TYPE,
-                    value = VIDEO_RANGE_TYPE_DOVI_WITH_EL,
-                    isRequired = false,
-                ),
-                ProfileCondition(
-                    condition = ProfileConditionType.NOT_EQUALS,
-                    property = ProfileConditionValue.VIDEO_RANGE_TYPE,
-                    value = VIDEO_RANGE_TYPE_DOVI_WITH_EL_HDR10_PLUS,
-                    isRequired = false,
-                ),
-            )
-        }
+            ),
+        )
+    }
 
     private fun getSubtitleProfiles(embedded: Array<String>, external: Array<String>): List<SubtitleProfile> = ArrayList<SubtitleProfile>().apply {
         for (format in embedded) {
@@ -468,20 +402,6 @@ class DeviceProfileBuilder(
     companion object {
         private const val EXTERNAL_PLAYER_PROFILE_NAME = Constants.APP_INFO_NAME + " External Player"
         private const val DEFAULT_H264_MAX_LEVEL = "41"
-
-        /**
-         * Dolby Vision Profile 7 dual-layer, declared first of the two range-type exclusions in
-         * [generateCodecProfile]. Both are required; see the comment there before changing either.
-         */
-        private const val VIDEO_RANGE_TYPE_DOVI_WITH_EL = "DOVIWithEL"
-
-        /**
-         * Declared second, and therefore the one that actually survives into the server's range
-         * list - SetOption overwrites rather than intersects, leaving a list that still contains
-         * [VIDEO_RANGE_TYPE_DOVI_WITH_EL], which is what keeps Profile 7 FEL on the stream-copy
-         * path. See [generateCodecProfile]; this ordering is load-bearing, not incidental.
-         */
-        private const val VIDEO_RANGE_TYPE_DOVI_WITH_EL_HDR10_PLUS = "DOVIWithELHDR10Plus"
 
         /**
          * Every range type the server knows, used as an allow-list that excludes nothing.
