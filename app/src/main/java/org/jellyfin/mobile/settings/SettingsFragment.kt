@@ -8,6 +8,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import de.Maxr1998.modernpreferences.Preference
 import de.Maxr1998.modernpreferences.PreferencesAdapter
@@ -22,6 +23,7 @@ import de.Maxr1998.modernpreferences.helpers.screen
 import de.Maxr1998.modernpreferences.helpers.singleChoice
 import de.Maxr1998.modernpreferences.preferences.CheckBoxPreference
 import de.Maxr1998.modernpreferences.preferences.choice.SelectionItem
+import org.jellyfin.mobile.BuildConfig
 import org.jellyfin.mobile.R
 import org.jellyfin.mobile.app.AppPreferences
 import org.jellyfin.mobile.app.StorageManager
@@ -29,9 +31,11 @@ import org.jellyfin.mobile.databinding.FragmentSettingsBinding
 import org.jellyfin.mobile.downloads.DownloadMethod
 import org.jellyfin.mobile.utils.BackPressInterceptor
 import org.jellyfin.mobile.utils.Constants
+import org.jellyfin.mobile.utils.FileLogTree
 import org.jellyfin.mobile.utils.applyWindowInsetsAsMargins
 import org.jellyfin.mobile.utils.extensions.requireMainActivity
 import org.jellyfin.mobile.utils.isPackageInstalled
+import org.jellyfin.mobile.utils.toast
 import org.jellyfin.mobile.utils.withThemedContext
 import org.koin.android.ext.android.inject
 
@@ -289,11 +293,65 @@ class SettingsFragment : Fragment(), BackPressInterceptor {
                 false
             }
         }
+
+        categoryHeader(PREF_CATEGORY_DIAGNOSTICS) {
+            titleRes = R.string.pref_category_diagnostics
+        }
+        checkBox(Constants.PREF_WRITE_LOG_FILE) {
+            titleRes = R.string.pref_write_log_file
+            summaryRes = R.string.pref_write_log_file_description
+            defaultValue = BuildConfig.DEBUG
+            // Timber trees are planted once at application start, so a change here only takes
+            // effect on the next launch. Saying so beats leaving the user wondering why the log
+            // is empty.
+            defaultOnCheckedChange {
+                requireContext().toast(R.string.toast_reopen_after_change)
+            }
+        }
+        pref(Constants.PREF_SHARE_LOG_FILE) {
+            titleRes = R.string.pref_share_log_file
+            summaryRes = R.string.pref_share_log_file_description
+            onClick {
+                shareLogFile()
+                false
+            }
+        }
+    }
+
+    /**
+     * Hands the saved log to the system share sheet, so it can be sent by mail or messaging
+     * without the user having to find it in storage - the app's external files directory is not
+     * reachable through the Files app on modern Android.
+     */
+    private fun shareLogFile() {
+        val context = requireContext()
+        val logFile = FileLogTree.collectForSharing(context)
+        if (logFile == null) {
+            context.toast(R.string.share_log_file_empty)
+            return
+        }
+
+        val uri = runCatching {
+            FileProvider.getUriForFile(context, "${BuildConfig.APPLICATION_ID}.log-provider", logFile)
+        }.getOrNull()
+        if (uri == null) {
+            context.toast(R.string.share_log_file_failed)
+            return
+        }
+
+        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, FileLogTree.SHARED_LOG_FILE_NAME)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivity(Intent.createChooser(shareIntent, getString(R.string.share_log_file_chooser_title)))
     }
 
     companion object {
         const val PREF_CATEGORY_MUSIC_PLAYER = "pref_category_music"
         const val PREF_CATEGORY_VIDEO_PLAYER = "pref_category_video"
         const val PREF_CATEGORY_DOWNLOADS = "pref_category_downloads"
+        const val PREF_CATEGORY_DIAGNOSTICS = "pref_category_diagnostics"
     }
 }
