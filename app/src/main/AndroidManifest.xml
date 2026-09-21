@@ -101,6 +101,18 @@
             android:grantUriPermissions="true"
             android:readPermission="android.permission.MEDIA_CONTENT_CONTROL" />
 
+        <!-- Grants temporary read access to the shared log file only, so it can be attached to
+             an email or message. Not exported: access is granted per-share by the Intent. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.log-provider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/log_provider_paths" />
+        </provider>
+
         <receiver android:name="org.jellyfin.mobile.downloads.DownloadBroadcastReceiver" />
 
         <meta-data
