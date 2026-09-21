@@ -17,6 +17,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.Clock
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -95,6 +96,12 @@ import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
+
+/**
+ * How far to walk a failure's cause chain when logging it. Deep enough to reach the underlying
+ * IO exception, shallow enough not to dump the world into a shared log file.
+ */
+private const val MAX_CAUSE_DEPTH = 5
 
 @Suppress("TooManyFunctions")
 class PlayerViewModel(application: Application) : AndroidViewModel(application), KoinComponent, Player.Listener {
@@ -834,7 +841,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
             setupPlayer()
             queueManager.tryRestartPlayback()
         } else {
-            Timber.w(error, "Playback error (%s), attempting fallback", error.errorCodeName)
+            Timber.w(error, "Playback error, attempting fallback%s", diagnosticDetail(error))
             val startPosition = (playerOrNull?.currentPosition ?: 0L).milliseconds
             fallbackRetryJob?.cancel()
             fallbackRetryJob = viewModelScope.launch {
@@ -843,6 +850,44 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
                     _error.postValue(describePlaybackError(error))
                 }
             }
+        }
+    }
+
+    /**
+     * The facts about a playback failure that a stack trace alone does not give up.
+     *
+     * A bare [PlaybackException] says almost nothing useful: the message is often just
+     * "Source error". What actually identifies the failure is the error code by name, which
+     * request was in flight, and - when the server answered at all - what it answered with.
+     * Without the URI there is no way to tell a failure on the initialisation segment from one
+     * on a media segment, and that distinction has mattered repeatedly.
+     *
+     * The query string is dropped: it carries the access token, and this text is written to a
+     * file that is meant to be shared.
+     */
+    private fun diagnosticDetail(error: PlaybackException): String = buildString {
+        append("\n  errorCode: ").append(error.errorCodeName)
+
+        var cause: Throwable? = error.cause
+        var depth = 0
+        while (cause != null && depth < MAX_CAUSE_DEPTH) {
+            append("\n  caused by: ").append(cause.javaClass.name)
+            cause.message?.let { message -> append(" - ").append(message) }
+
+            when (cause) {
+                is HttpDataSource.InvalidResponseCodeException -> {
+                    append("\n    responseCode: ").append(cause.responseCode)
+                    append("\n    uri: ").append(cause.dataSpec.uri.buildUpon().clearQuery().build())
+                }
+                is HttpDataSource.HttpDataSourceException -> {
+                    append("\n    type: ").append(cause.type)
+                    append("\n    uri: ").append(cause.dataSpec.uri.buildUpon().clearQuery().build())
+                }
+                else -> Unit
+            }
+
+            cause = cause.cause
+            depth++
         }
     }
 

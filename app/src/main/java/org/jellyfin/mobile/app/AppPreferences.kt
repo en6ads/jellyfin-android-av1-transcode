@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
 import androidx.core.content.edit
+import org.jellyfin.mobile.BuildConfig
 import org.jellyfin.mobile.downloads.DownloadMethod
 import org.jellyfin.mobile.player.mediasegments.MediaSegmentAction
 import org.jellyfin.mobile.player.mediasegments.toMediaSegmentActionsString
@@ -171,6 +172,16 @@ class AppPreferences(context: Context) {
                 putInt(Constants.PREF_EXOPLAYER_LAST_QUALITY_BITRATE, value)
             }
         }
+
+    /**
+     * Whether log output is also written to a file that can be shared from the settings screen.
+     *
+     * Defaults to on for debug builds and off for release builds: a debug build is already
+     * running for the sake of diagnosing something, whereas a release user should opt in before
+     * the app starts writing their playback history to disk.
+     */
+    val writeLogFile: Boolean
+        get() = sharedPreferences.getBoolean(Constants.PREF_WRITE_LOG_FILE, BuildConfig.DEBUG)
 
     @ExternalPlayerPackage
     var externalPlayerApp: String

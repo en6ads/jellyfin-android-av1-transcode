@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- The single concatenated log file assembled for sharing. Scoped to the cache directory
+         so nothing else the app stores is reachable through this provider. -->
+    <cache-path
+        name="logs"
+        path="." />
+</paths>
