@@ -118,8 +118,8 @@
     <string name="pref_exoplayer_allow_horizontal_gesture_summary">Allow horizontal gesture control for video seeking</string>
     <string name="pref_exoplayer_direct_play_ass">Allow SSA/ASS subtitles in direct play</string>
     <string name="pref_exoplayer_direct_play_ass_description">Use experimental client-side subtitle rendering, may not always work</string>
-    <string name="pref_exoplayer_allow_dv_profile_7">Allow Dolby Vision Profile 7</string>
-    <string name="pref_exoplayer_allow_dv_profile_7_description">Only for devices that can decode dual-layer Dolby Vision. Most cannot, and will show a black screen</string>
+    <string name="pref_exoplayer_allow_dv_profile_7">Allow direct play of Dolby Vision Profile 7</string>
+    <string name="pref_exoplayer_allow_dv_profile_7_description">Plays dual-layer Dolby Vision files untouched, for the few devices that can decode them. Most cannot and will show a black screen with no error. Leaving this off does not stop such files playing — they are remuxed or transcoded instead, and keep their HDR either way</string>
     <string name="pref_exoplayer_ask_quality_before_play">Choose quality before playing</string>
     <string name="pref_exoplayer_ask_quality_before_play_description">Ask which quality to stream at when playback starts, instead of trying direct play first and offering the choice from inside the player</string>
     <string name="pre_playback_quality_title">Playback quality</string>
