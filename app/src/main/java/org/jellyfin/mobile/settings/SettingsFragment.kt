@@ -61,6 +61,7 @@ class SettingsFragment : Fragment(), BackPressInterceptor {
     private lateinit var horizontalGesturePreference: Preference
     private lateinit var directPlayAssPreference: Preference
     private lateinit var dolbyVisionProfile7Preference: Preference
+    private lateinit var askQualityBeforePlayPreference: Preference
     private lateinit var networkBufferPreference: Preference
     private lateinit var externalPlayerChoicePreference: Preference
     private lateinit var downloadLocationPreference: Preference
@@ -129,7 +130,8 @@ class SettingsFragment : Fragment(), BackPressInterceptor {
                 backgroundAudioPreference.enabled = selection == VideoPlayerType.EXO_PLAYER
                 horizontalGesturePreference.enabled = selection == VideoPlayerType.EXO_PLAYER
                 directPlayAssPreference.enabled = selection == VideoPlayerType.EXO_PLAYER
-            dolbyVisionProfile7Preference.enabled = selection == VideoPlayerType.EXO_PLAYER
+                dolbyVisionProfile7Preference.enabled = selection == VideoPlayerType.EXO_PLAYER
+                askQualityBeforePlayPreference.enabled = selection == VideoPlayerType.EXO_PLAYER
                 networkBufferPreference.enabled = selection == VideoPlayerType.EXO_PLAYER
                 externalPlayerChoicePreference.enabled = selection == VideoPlayerType.EXTERNAL_PLAYER
             }
@@ -178,6 +180,11 @@ class SettingsFragment : Fragment(), BackPressInterceptor {
         dolbyVisionProfile7Preference = checkBox(Constants.PREF_EXOPLAYER_ALLOW_DV_PROFILE_7) {
             titleRes = R.string.pref_exoplayer_allow_dv_profile_7
             summaryRes = R.string.pref_exoplayer_allow_dv_profile_7_description
+            enabled = appPreferences.videoPlayerType == VideoPlayerType.EXO_PLAYER
+        }
+        askQualityBeforePlayPreference = checkBox(Constants.PREF_EXOPLAYER_ASK_QUALITY_BEFORE_PLAY) {
+            titleRes = R.string.pref_exoplayer_ask_quality_before_play
+            summaryRes = R.string.pref_exoplayer_ask_quality_before_play_description
             enabled = appPreferences.videoPlayerType == VideoPlayerType.EXO_PLAYER
         }
         val networkBufferOptions = listOf(
