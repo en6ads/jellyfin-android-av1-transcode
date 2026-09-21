@@ -21,6 +21,8 @@ import org.jellyfin.mobile.R
 import org.jellyfin.mobile.databinding.ExoPlayerControlViewBinding
 import org.jellyfin.mobile.databinding.FragmentPlayerBinding
 import org.jellyfin.mobile.player.qualityoptions.QualityOptionsProvider
+import org.jellyfin.mobile.player.qualityoptions.formatBitrate
+import org.jellyfin.mobile.player.qualityoptions.getLabel
 import org.jellyfin.mobile.player.source.JellyfinMediaSource
 import org.jellyfin.mobile.player.source.LocalJellyfinMediaSource
 import org.jellyfin.mobile.player.source.RemoteJellyfinMediaSource
@@ -30,7 +32,6 @@ import org.jellyfin.sdk.model.api.ChapterInfo
 import org.jellyfin.sdk.model.api.MediaStream
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
-import java.util.Locale
 
 /**
  *  Provides a menu UI for audio, subtitle and video stream selection
@@ -390,11 +391,7 @@ class PlayerMenus(
         menu.clear()
         val options = qualityOptionsProvider.getApplicableQualityOptions(videoWidth, videoHeight)
         options.forEach { option ->
-            val title = when (val bitrate = option.bitrate) {
-                0 -> context.getString(R.string.menu_item_auto)
-                else -> "${option.maxHeight}p - ${formatBitrate(bitrate.toDouble())}"
-            }
-            menu.add(QUALITY_MENU_GROUP, option.bitrate, Menu.NONE, title)
+            menu.add(QUALITY_MENU_GROUP, option.bitrate, Menu.NONE, option.getLabel(context))
         }
         menu.setGroupCheckable(QUALITY_MENU_GROUP, true, true)
 
@@ -411,18 +408,6 @@ class PlayerMenus(
         fragment.onPopupDismissed()
     }
 
-    private fun formatBitrate(bitrate: Double): String {
-        val (value, unit) = when {
-            bitrate > BITRATE_MEGA_BIT -> bitrate / BITRATE_MEGA_BIT to " Mbps"
-            bitrate > BITRATE_KILO_BIT -> bitrate / BITRATE_KILO_BIT to " kbps"
-            else -> bitrate to " bps"
-        }
-
-        // Remove unnecessary trailing zeros
-        val formatted = "%.2f".format(Locale.getDefault(), value).removeSuffix(".00")
-        return formatted + unit
-    }
-
     companion object {
         private const val SUBTITLES_MENU_GROUP = 0
         private const val AUDIO_MENU_GROUP = 1
@@ -432,9 +417,6 @@ class PlayerMenus(
 
         private const val MAX_VIDEO_STREAMS_DISPLAY = 3
         private const val MAX_AUDIO_STREAMS_DISPLAY = 5
-
-        private const val BITRATE_MEGA_BIT = 1_000_000
-        private const val BITRATE_KILO_BIT = 1_000
 
         private const val SPEED_MENU_STEP_SIZE = 0.25f
         private const val SPEED_MENU_STEP_MIN = 2 // → 0.5x
