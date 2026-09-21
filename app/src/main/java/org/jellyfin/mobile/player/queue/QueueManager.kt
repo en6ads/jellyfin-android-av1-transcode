@@ -217,9 +217,13 @@ class QueueManager(
             // pass passes false, and the server cannot answer it with DIRECT_PLAY again.
             // Skipped entirely when the user has declared this device able to decode dual-layer
             // streams (AppPreferences.exoPlayerAllowDolbyVisionProfile7) - on that hardware direct
-            // play is the desired outcome, and DeviceProfileBuilder correspondingly stops telling
-            // the server Profile 7 is unsupported. The two must agree; enabling one without the
-            // other produces a profile that advertises support while the client refuses to use it.
+            // play is the desired outcome.
+            //
+            // This guard is now the ONLY thing keeping Profile 7 off direct play. The device
+            // profile used to also declare it unsupported, but doing so disqualified av1 and hevc
+            // for such sources and suppressed the video range declaration along with them, which
+            // cost HDR on the transcode path - a far worse outcome than the extra round trip this
+            // re-resolve costs. See generateCodecProfile in DeviceProfileBuilder.
             if (enableDirectPlay != false &&
                 !appPreferences.exoPlayerAllowDolbyVisionProfile7 &&
                 jellyfinMediaSource.playMethod == PlayMethod.DIRECT_PLAY &&
