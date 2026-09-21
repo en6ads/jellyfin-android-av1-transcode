@@ -128,6 +128,32 @@ class AppPreferences(context: Context) {
     val exoPlayerNetworkBuffer: String
         get() = sharedPreferences.getString(Constants.PREF_EXOPLAYER_NETWORK_BUFFER, Constants.NETWORK_BUFFER_AUTO)!!
 
+    /**
+     * Whether to ask which quality to stream at before playback starts, rather than resolving
+     * the stream first and offering the choice from inside the player.
+     *
+     * Without this the web client's own quality setting decides, which on a fast-enough-looking
+     * link means direct play: the full-bitrate source is attempted, has to visibly fail or be
+     * manually overridden, and only then is a transcode requested. On a slow connection that
+     * first attempt is wasted every single time. Asking up front resolves the media source once,
+     * at the bitrate the user actually wants.
+     */
+    val exoPlayerAskQualityBeforePlay: Boolean
+        get() = sharedPreferences.getBoolean(Constants.PREF_EXOPLAYER_ASK_QUALITY_BEFORE_PLAY, false)
+
+    /**
+     * The bitrate chosen the last time the pre-playback picker was shown, in bits per second,
+     * where 0 means "Auto". Used to preselect that entry next time, because the answer is
+     * usually the same until the network changes.
+     */
+    var exoPlayerLastQualityBitrate: Int
+        get() = sharedPreferences.getInt(Constants.PREF_EXOPLAYER_LAST_QUALITY_BITRATE, 0)
+        set(value) {
+            sharedPreferences.edit {
+                putInt(Constants.PREF_EXOPLAYER_LAST_QUALITY_BITRATE, value)
+            }
+        }
+
     @ExternalPlayerPackage
     var externalPlayerApp: String
         get() = sharedPreferences.getString(Constants.PREF_EXTERNAL_PLAYER_APP, ExternalPlayerPackage.SYSTEM_DEFAULT)!!
