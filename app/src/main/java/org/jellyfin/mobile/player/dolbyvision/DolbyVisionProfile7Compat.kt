@@ -1,5 +1,7 @@
 package org.jellyfin.mobile.player.dolbyvision
 
+import android.media.MediaCodecList
+import android.media.MediaFormat
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
@@ -11,6 +13,7 @@ import androidx.media3.extractor.ForwardingExtractor
 import androidx.media3.extractor.ForwardingExtractorOutput
 import androidx.media3.extractor.ForwardingTrackOutput
 import androidx.media3.extractor.TrackOutput
+import org.jellyfin.mobile.utils.Constants
 import timber.log.Timber
 
 /**
@@ -46,34 +49,40 @@ import timber.log.Timber
 @UnstableApi
 class DolbyVisionProfile7CompatExtractorsFactory(
     private val delegate: ExtractorsFactory,
+    private val rewriteEnabled: () -> Boolean,
 ) : ExtractorsFactory {
     override fun createExtractors(): Array<Extractor> =
-        delegate.createExtractors().map(::DolbyVisionProfile7CompatExtractor).toTypedArray()
+        delegate.createExtractors().map(::wrap).toTypedArray()
 
     override fun createExtractors(
         uri: android.net.Uri,
         responseHeaders: MutableMap<String, MutableList<String>>,
     ): Array<Extractor> =
-        delegate.createExtractors(uri, responseHeaders).map(::DolbyVisionProfile7CompatExtractor).toTypedArray()
+        delegate.createExtractors(uri, responseHeaders).map(::wrap).toTypedArray()
+
+    private fun wrap(extractor: Extractor): Extractor =
+        DolbyVisionProfile7CompatExtractor(extractor, rewriteEnabled)
 }
 
 @UnstableApi
 private class DolbyVisionProfile7CompatExtractor(
     delegate: Extractor,
+    private val rewriteEnabled: () -> Boolean,
 ) : ForwardingExtractor(delegate) {
     override fun init(output: ExtractorOutput) {
-        super.init(DolbyVisionProfile7CompatExtractorOutput(output))
+        super.init(DolbyVisionProfile7CompatExtractorOutput(output, rewriteEnabled))
     }
 }
 
 @UnstableApi
 private class DolbyVisionProfile7CompatExtractorOutput(
     delegate: ExtractorOutput,
+    private val rewriteEnabled: () -> Boolean,
 ) : ForwardingExtractorOutput(delegate) {
     override fun track(id: Int, type: Int): TrackOutput {
         val track = super.track(id, type)
         return when (type) {
-            C.TRACK_TYPE_VIDEO -> DolbyVisionProfile7CompatTrackOutput(track)
+            C.TRACK_TYPE_VIDEO -> DolbyVisionProfile7CompatTrackOutput(track, rewriteEnabled)
             else -> track
         }
     }
@@ -82,10 +91,48 @@ private class DolbyVisionProfile7CompatExtractorOutput(
 @UnstableApi
 private class DolbyVisionProfile7CompatTrackOutput(
     delegate: TrackOutput,
+    private val rewriteEnabled: () -> Boolean,
 ) : ForwardingTrackOutput(delegate) {
     override fun format(format: Format) {
-        super.format(asPlainHevcIfProfile7(format))
+        // Read per track rather than captured once, so changing the setting takes effect on the
+        // next playback instead of the next app start.
+        super.format(if (rewriteEnabled()) asPlainHevcIfProfile7(format) else format)
     }
+}
+
+/**
+ * Whether this device has a Dolby Vision decoder of its own.
+ *
+ * Queried rather than assumed, and cached, because [MediaCodecList] enumeration is not cheap and
+ * the answer cannot change while the process lives. Note this only reports that a Dolby Vision
+ * decoder exists at all - MediaCodec does not say whether it accepts dual layer, which is why
+ * the base-layer override has to remain available to the user.
+ */
+object DolbyVisionDecoder {
+    val isPresent: Boolean by lazy {
+        runCatching {
+            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
+                !info.isEncoder && info.supportedTypes.any { type ->
+                    type.equals(MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION, ignoreCase = true)
+                }
+            }
+        }.getOrElse { error ->
+            Timber.w(error, "Could not enumerate codecs; assuming no Dolby Vision decoder")
+            false
+        }
+    }
+}
+
+/**
+ * Whether a Profile 7 track should be presented as HEVC, for the given setting.
+ *
+ * Automatic leaves the stream alone where the hardware has a Dolby Vision decoder, so that real
+ * Dolby Vision plays rather than being flattened to its base layer.
+ */
+fun shouldRewriteProfile7(mode: String, hasDolbyVisionDecoder: Boolean): Boolean = when (mode) {
+    Constants.DV_PROFILE_7_BASE_LAYER -> true
+    Constants.DV_PROFILE_7_NEVER -> false
+    else -> !hasDolbyVisionDecoder
 }
 
 /**
