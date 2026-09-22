@@ -37,6 +37,7 @@ import org.jellyfin.mobile.downloads.DownloadsViewModel
 import org.jellyfin.mobile.downloads.FileDownloader
 import org.jellyfin.mobile.events.ActivityEventHandler
 import org.jellyfin.mobile.player.deviceprofile.DeviceProfileBuilder
+import org.jellyfin.mobile.player.dolbyvision.DolbyVisionProfile7CompatExtractorsFactory
 import org.jellyfin.mobile.player.interaction.PlayerEvent
 import org.jellyfin.mobile.player.mediasegments.MediaSegmentRepository
 import org.jellyfin.mobile.player.qualityoptions.QualityOptionsProvider
@@ -238,11 +239,17 @@ val applicationModule = module {
             val assHandler: AssHandler = get()
             val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
             val assExtractorsFactory = extractorsFactory.withAssMkvSupport(assSubtitleParserFactory, assHandler)
-            DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), assExtractorsFactory)
+            DefaultMediaSourceFactory(
+                get<CacheDataSource.Factory>(),
+                DolbyVisionProfile7CompatExtractorsFactory(assExtractorsFactory),
+            )
                 .setSubtitleParserFactory(assSubtitleParserFactory)
                 .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         } else {
-            DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), extractorsFactory)
+            DefaultMediaSourceFactory(
+                get<CacheDataSource.Factory>(),
+                DolbyVisionProfile7CompatExtractorsFactory(extractorsFactory),
+            )
                 .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         }
     }
