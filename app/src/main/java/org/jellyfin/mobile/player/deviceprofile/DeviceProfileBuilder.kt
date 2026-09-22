@@ -276,7 +276,7 @@ class DeviceProfileBuilder(
                     ),
                 )
                 for (videoCodec in supportedVideoCodecs[i]) {
-                    generateCodecProfile(container, videoCodec)?.let(codecProfiles::add)
+                    codecProfiles.add(generateCodecProfile(container, videoCodec))
                 }
             }
             if (supportedAudioCodecs[i].isNotEmpty()) {
@@ -313,54 +313,77 @@ class DeviceProfileBuilder(
         )
     }
 
+    /**
+     * A codec profile for every codec this device decodes, whether or not any of its MediaCodec
+     * profile constants happen to have a name in [CodecHelpers].
+     *
+     * Returning null for a codec with no known profile names - as this used to - loses far more
+     * than the profile list. StreamBuilder matches codec profiles against the codecs it intends
+     * to PRODUCE as well as the ones it might direct play, and applies their conditions to the
+     * transcode target. So a missing codec profile means the server is told nothing about that
+     * codec at all: no level cap, and no video range list. AV1 hit exactly this, because
+     * CodecHelpers maps the AV1 mime type but has no AV1 profile mapping, so av1-rangetype was
+     * never sent and an HDR-capable server had nothing to match its output range against.
+     *
+     * Emitting unconditionally means the next codec nobody thought to map degrades to "fewer
+     * constraints" rather than "silently no constraints at all".
+     */
     private fun generateCodecProfile(
         container: String,
         videoCodec: String,
-    ): CodecProfile? {
+    ): CodecProfile {
         val profilesSet = videoCodecsProfiles[videoCodec]
-        if (profilesSet?.isNotEmpty() != true) {
-            return null
-        }
 
         return CodecProfile(
             type = CodecType.VIDEO,
             container = container,
             codec = videoCodec,
             applyConditions = listOf(),
-            conditions = listOf(
-                ProfileCondition(
-                    condition = ProfileConditionType.EQUALS_ANY,
-                    property = ProfileConditionValue.VIDEO_PROFILE,
-                    value = profilesSet.joinToString("|"),
-                    isRequired = false,
-                ),
-                // A plain declaration of the video ranges this device can present. It excludes
-                // nothing, so it is satisfied by every source and disqualifies no codec.
+            conditions = buildList {
+                // Only when MediaCodec reported profiles we recognise. An empty EQUALS_ANY would
+                // be satisfied by nothing, which is a stricter claim than "unknown".
+                if (!profilesSet.isNullOrEmpty()) {
+                    add(
+                        ProfileCondition(
+                            condition = ProfileConditionType.EQUALS_ANY,
+                            property = ProfileConditionValue.VIDEO_PROFILE,
+                            value = profilesSet.joinToString("|"),
+                            isRequired = false,
+                        ),
+                    )
+                }
+
+                // The video ranges this device is willing to be sent. It excludes nothing, and
+                // that is deliberate rather than lazy.
                 //
-                // It used to be a pair of Dolby Vision NOT_EQUALS exclusions instead, aimed at
-                // keeping Profile 7 FEL on Jellyfin 12.0's stream-copy path. That copy stopped
-                // happening under 12.1 whatever is declared here, so the exclusions no longer
-                // bought anything - and they cost a great deal, because a CodecProfile only
-                // applies when its conditions are SATISFIED. For a DOVIWithEL source they were
-                // not, so the entire profile was discarded, which:
-                //   - disqualified av1 and hevc, routing Profile 7 to the ts/h264 fallback, and
-                //   - took the range declaration with it, leaving the server nothing to match
-                //     against, so an HDR-preserving server tone-mapped to SDR anyway.
-                // Measured on a Profile 7 title: ts/hevc_qsv, tonemap_opencl, nv12 out. The same
-                // title with these exclusions gone: fmp4/av1_qsv, no tonemap, p010 out.
+                // This list is doing two jobs at once, which is a wart in Jellyfin's model
+                // rather than in this profile. StreamBuilder applies these conditions to the
+                // transcode target - which is how the server learns what output range is
+                // acceptable - but it ALSO evaluates them against the source in
+                // GetCompatibilityVideoCodec, and ranks transcoding profiles by the result. A
+                // range this list omits therefore does not merely mean "cannot display"; it
+                // demotes every transcoding profile whose codec list could have carried it.
                 //
-                // Direct play of Profile 7 is NOT what these were protecting. QueueManager does
-                // that independently, re-resolving with enableDirectPlay = false, because such a
-                // direct play fails SILENTLY with a black screen and no error to catch. That
-                // guard is gated on the same preference, so the two still agree - the profile no
-                // longer has to lie about what the device supports in order to get there.
-                ProfileCondition(
-                    condition = ProfileConditionType.EQUALS_ANY,
-                    property = ProfileConditionValue.VIDEO_RANGE_TYPE,
-                    value = ALL_VIDEO_RANGE_TYPES,
-                    isRequired = false,
-                ),
-            ),
+                // That is what a pair of Dolby Vision NOT_EQUALS exclusions used to do here.
+                // They demoted the mp4/av1 profile for a Profile 7 source, so the ts/hevc
+                // profile won the ranking and AV1 was never offered - and being tone-mapped
+                // followed from that. Measured on a Profile 7 title: ts/hevc_qsv, tonemap_opencl,
+                // nv12 out; with them gone, fmp4/av1_qsv, no tonemap, p010 out.
+                //
+                // So the DOVI entries are not a claim that this device displays Dolby Vision -
+                // most cannot. They say "do not rank these sources away from my best transcode
+                // target". Direct play of Profile 7 is refused separately and honestly, by
+                // QueueManager re-resolving with enableDirectPlay = false, because that failure
+                // is a silent black screen with no error for any fallback to catch.
+                add(
+                    ProfileCondition(
+                        condition = ProfileConditionType.EQUALS_ANY,
+                        property = ProfileConditionValue.VIDEO_RANGE_TYPE,
+                        value = ALL_VIDEO_RANGE_TYPES,
+                        isRequired = false,
+                    ),
+                )
+            },
         )
     }
 
