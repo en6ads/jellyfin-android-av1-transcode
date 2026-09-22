@@ -118,8 +118,13 @@
     <string name="pref_exoplayer_allow_horizontal_gesture_summary">Allow horizontal gesture control for video seeking</string>
     <string name="pref_exoplayer_direct_play_ass">Allow SSA/ASS subtitles in direct play</string>
     <string name="pref_exoplayer_direct_play_ass_description">Use experimental client-side subtitle rendering, may not always work</string>
-    <string name="pref_exoplayer_allow_dv_profile_7">Allow direct play of Dolby Vision Profile 7</string>
-    <string name="pref_exoplayer_allow_dv_profile_7_description">Lets this client accept a direct play of dual-layer Profile 7 Dolby Vision files (FEL, MEL), served untouched. Intended for the few Android devices that can decode them. The majority will show a black screen or an error with this toggle on, so the default is off. With it off, Profile 7 files are remuxed or transcoded instead, in HDR10 if your Android device supports HDR10</string>
+    <string name="pref_exoplayer_dv_profile_7_mode">Dolby Vision Profile 7</string>
+    <string name="dv_profile_7_automatic">Automatic</string>
+    <string name="dv_profile_7_automatic_description">Use this device\'s Dolby Vision decoder if it has one, otherwise play the HDR10 base layer</string>
+    <string name="dv_profile_7_base_layer">Always play the base layer</string>
+    <string name="dv_profile_7_base_layer_description">Ignore any Dolby Vision decoder and play these files as HDR10. For devices that claim Dolby Vision support but handle dual-layer files badly</string>
+    <string name="dv_profile_7_never">Never play directly</string>
+    <string name="dv_profile_7_never_description">Let the server convert these files instead. Slower, and needs the server to re-encode</string>
     <string name="pref_exoplayer_ask_quality_before_play">Choose quality before playing</string>
     <string name="pref_exoplayer_ask_quality_before_play_description">Ask which quality to stream at when playback starts, instead of trying direct play first and offering the choice from inside the player</string>
     <string name="pre_playback_quality_title">Playback quality</string>

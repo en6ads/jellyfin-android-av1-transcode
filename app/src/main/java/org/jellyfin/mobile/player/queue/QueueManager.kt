@@ -25,6 +25,7 @@ import org.jellyfin.mobile.player.source.LocalJellyfinMediaSource
 import org.jellyfin.mobile.player.source.MediaSourceResolver
 import org.jellyfin.mobile.player.source.PlaybackDetails
 import org.jellyfin.mobile.player.source.RemoteJellyfinMediaSource
+import org.jellyfin.mobile.utils.Constants
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.systemApi
 import org.jellyfin.sdk.api.client.extensions.videosApi
@@ -215,17 +216,20 @@ class QueueManager(
             //
             // Guarded on enableDirectPlay != false so the re-resolve cannot recurse: the second
             // pass passes false, and the server cannot answer it with DIRECT_PLAY again.
-            // Skipped entirely when the user has declared this device able to decode dual-layer
-            // streams (AppPreferences.exoPlayerAllowDolbyVisionProfile7) - on that hardware direct
-            // play is the desired outcome.
+            // Reached only when the user has explicitly chosen not to play Profile 7 directly.
+            // That used to be the default and the safe answer, because such a direct play was a
+            // silent black screen. It is no longer: the player presents a Profile 7 track as
+            // plain HEVC, so the base layer decodes on any device, and refusing direct play now
+            // costs a needless conversion rather than avoiding a failure. See
+            // DolbyVisionProfile7Compat.
             //
-            // This guard is now the ONLY thing keeping Profile 7 off direct play. The device
-            // profile used to also declare it unsupported, but doing so disqualified av1 and hevc
-            // for such sources and suppressed the video range declaration along with them, which
-            // cost HDR on the transcode path - a far worse outcome than the extra round trip this
-            // re-resolve costs. See generateCodecProfile in DeviceProfileBuilder.
+            // This remains the ONLY thing keeping Profile 7 off direct play when that is what
+            // the user asked for. The device profile used to declare it unsupported as well, but
+            // that disqualified av1 and hevc for such sources and suppressed the video range
+            // declaration along with them, costing HDR on the transcode path. See
+            // generateCodecProfile in DeviceProfileBuilder.
             if (enableDirectPlay != false &&
-                !appPreferences.exoPlayerAllowDolbyVisionProfile7 &&
+                appPreferences.dolbyVisionProfile7Mode == Constants.DV_PROFILE_7_NEVER &&
                 jellyfinMediaSource.playMethod == PlayMethod.DIRECT_PLAY &&
                 jellyfinMediaSource.isDolbyVisionProfile7
             ) {

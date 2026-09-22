@@ -37,7 +37,9 @@ import org.jellyfin.mobile.downloads.DownloadsViewModel
 import org.jellyfin.mobile.downloads.FileDownloader
 import org.jellyfin.mobile.events.ActivityEventHandler
 import org.jellyfin.mobile.player.deviceprofile.DeviceProfileBuilder
+import org.jellyfin.mobile.player.dolbyvision.DolbyVisionDecoder
 import org.jellyfin.mobile.player.dolbyvision.DolbyVisionProfile7CompatExtractorsFactory
+import org.jellyfin.mobile.player.dolbyvision.shouldRewriteProfile7
 import org.jellyfin.mobile.player.interaction.PlayerEvent
 import org.jellyfin.mobile.player.mediasegments.MediaSegmentRepository
 import org.jellyfin.mobile.player.qualityoptions.QualityOptionsProvider
@@ -235,20 +237,27 @@ val applicationModule = module {
         val loadErrorHandlingPolicy = DefaultLoadErrorHandlingPolicy(MINIMUM_LOADABLE_RETRY_COUNT)
 
         val appPreferences: AppPreferences = get()
+
+        // Evaluated per track rather than here, so changing the setting takes effect on the next
+        // playback rather than the next app start.
+        val rewriteProfile7 = {
+            shouldRewriteProfile7(appPreferences.dolbyVisionProfile7Mode, DolbyVisionDecoder.isPresent)
+        }
+
         if (appPreferences.exoPlayerDirectPlayAss) {
             val assHandler: AssHandler = get()
             val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
             val assExtractorsFactory = extractorsFactory.withAssMkvSupport(assSubtitleParserFactory, assHandler)
             DefaultMediaSourceFactory(
                 get<CacheDataSource.Factory>(),
-                DolbyVisionProfile7CompatExtractorsFactory(assExtractorsFactory),
+                DolbyVisionProfile7CompatExtractorsFactory(assExtractorsFactory, rewriteProfile7),
             )
                 .setSubtitleParserFactory(assSubtitleParserFactory)
                 .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         } else {
             DefaultMediaSourceFactory(
                 get<CacheDataSource.Factory>(),
-                DolbyVisionProfile7CompatExtractorsFactory(extractorsFactory),
+                DolbyVisionProfile7CompatExtractorsFactory(extractorsFactory, rewriteProfile7),
             )
                 .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         }

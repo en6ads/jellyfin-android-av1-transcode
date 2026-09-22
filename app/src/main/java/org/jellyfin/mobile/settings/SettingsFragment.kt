@@ -181,9 +181,29 @@ class SettingsFragment : Fragment(), BackPressInterceptor {
             summaryRes = R.string.pref_exoplayer_direct_play_ass_description
             enabled = appPreferences.videoPlayerType == VideoPlayerType.EXO_PLAYER
         }
-        dolbyVisionProfile7Preference = checkBox(Constants.PREF_EXOPLAYER_ALLOW_DV_PROFILE_7) {
-            titleRes = R.string.pref_exoplayer_allow_dv_profile_7
-            summaryRes = R.string.pref_exoplayer_allow_dv_profile_7_description
+        val dolbyVisionProfile7Options = listOf(
+            SelectionItem(
+                Constants.DV_PROFILE_7_AUTOMATIC,
+                R.string.dv_profile_7_automatic,
+                R.string.dv_profile_7_automatic_description,
+            ),
+            SelectionItem(
+                Constants.DV_PROFILE_7_BASE_LAYER,
+                R.string.dv_profile_7_base_layer,
+                R.string.dv_profile_7_base_layer_description,
+            ),
+            SelectionItem(
+                Constants.DV_PROFILE_7_NEVER,
+                R.string.dv_profile_7_never,
+                R.string.dv_profile_7_never_description,
+            ),
+        )
+        dolbyVisionProfile7Preference = singleChoice(
+            Constants.PREF_EXOPLAYER_DV_PROFILE_7_MODE,
+            dolbyVisionProfile7Options,
+        ) {
+            titleRes = R.string.pref_exoplayer_dv_profile_7_mode
+            initialSelection = Constants.DV_PROFILE_7_AUTOMATIC
             enabled = appPreferences.videoPlayerType == VideoPlayerType.EXO_PLAYER
         }
         askQualityBeforePlayPreference = checkBox(Constants.PREF_EXOPLAYER_ASK_QUALITY_BEFORE_PLAY) {

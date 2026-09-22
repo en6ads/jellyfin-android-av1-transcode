@@ -127,22 +127,29 @@ class AppPreferences(context: Context) {
         get() = sharedPreferences.getBoolean(Constants.PREF_EXOPLAYER_DIRECT_PLAY_ASS, false)
 
     /**
-     * Whether this device is claimed to decode Dolby Vision Profile 7 (dual-layer) itself.
+     * How Dolby Vision Profile 7 (dual-layer) should be decoded.
      *
-     * Defaults to false, and that default is deliberate: Android's MediaCodec does not report
-     * enhancement-layer support even on hardware where it demonstrably works, so there is nothing
-     * reliable to detect. jellyfin-androidtv reached the same conclusion and resorted to a
-     * hardcoded per-model allow-list (`KnownDefects.unreportedDoviProfile7Support`, currently just
-     * "SHIELD Android TV") plus a manual user override. This preference is that override, without
-     * the allow-list.
+     * This replaced a boolean that asked whether the device could decode Profile 7 itself, and
+     * which defaulted to off because the honest answer on most hardware was no - direct play of
+     * such a file produced a silent black screen, so the safe choice was to refuse it and let the
+     * server convert instead.
      *
-     * Leaving it off tells the server the device cannot present Profile 7, and keeps such sources
-     * off the direct play path - which on most devices renders a silent black screen. Turning it
-     * on is for hardware genuinely able to decode dual-layer streams; on anything else it will
-     * produce that black screen, which is why it is opt-in rather than detected.
+     * That is no longer the trade-off. The player now presents a Profile 7 track as plain HEVC,
+     * so its base layer decodes on any device, and refusing direct play costs a needless
+     * conversion rather than avoiding a failure. Hence a default of
+     * [Constants.DV_PROFILE_7_AUTOMATIC]: native Dolby Vision where the hardware has a decoder,
+     * the HDR10 base layer where it does not, and nothing for the user to know or set.
+     *
+     * The other two exist for hardware the automatic choice gets wrong.
+     * [Constants.DV_PROFILE_7_BASE_LAYER] is for a device that advertises a Dolby Vision decoder
+     * but handles dual-layer badly - the situation jellyfin-androidtv keeps a per-model defect
+     * list for. [Constants.DV_PROFILE_7_NEVER] restores the old behaviour outright.
      */
-    val exoPlayerAllowDolbyVisionProfile7: Boolean
-        get() = sharedPreferences.getBoolean(Constants.PREF_EXOPLAYER_ALLOW_DV_PROFILE_7, false)
+    val dolbyVisionProfile7Mode: String
+        get() = sharedPreferences.getString(
+            Constants.PREF_EXOPLAYER_DV_PROFILE_7_MODE,
+            Constants.DV_PROFILE_7_AUTOMATIC,
+        )!!
 
     val exoPlayerNetworkBuffer: String
         get() = sharedPreferences.getString(Constants.PREF_EXOPLAYER_NETWORK_BUFFER, Constants.NETWORK_BUFFER_AUTO)!!
