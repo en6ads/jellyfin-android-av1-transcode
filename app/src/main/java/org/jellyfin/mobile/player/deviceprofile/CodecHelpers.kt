@@ -40,6 +40,7 @@ object CodecHelpers {
         "hevc" -> getHEVCProfile(profile)
         "vp8" -> getVP8Profile(profile)
         "vp9" -> getVP9Profile(profile)
+        "av1" -> getAV1Profile(profile)
         else -> null
     }
 
@@ -121,6 +122,28 @@ object CodecHelpers {
         CodecProfileLevel.VP9Profile3,
         CodecProfileLevel.VP9Profile3HDR,
         -> "Profile 3"
+        else -> null
+    }
+
+    /**
+     * All four collapse to "Main" deliberately. AV1's profile says nothing about bit depth or
+     * HDR - Main covers 8 and 10 bit alike, and the HDR variants MediaCodec distinguishes are
+     * the same Main bitstream with different transfer characteristics. FFmpeg reports "Main" for
+     * every one of them, and that string is what the server compares a source against, so
+     * reporting anything more specific would simply fail to match.
+     *
+     * That AV1 is mapped here at all matters more than the name it maps to. DeviceProfileBuilder
+     * emits no CodecProfile for a codec with no known profiles, and the video range declaration
+     * rides on that CodecProfile - so while this returned null the client never sent
+     * av1-rangetype, and a server able to preserve HDR through an AV1 transcode had nothing to
+     * match the output range against.
+     */
+    private fun getAV1Profile(profile: Int): String? = when (profile) {
+        CodecProfileLevel.AV1ProfileMain8,
+        CodecProfileLevel.AV1ProfileMain10,
+        CodecProfileLevel.AV1ProfileMain10HDR10,
+        CodecProfileLevel.AV1ProfileMain10HDR10Plus,
+        -> "Main"
         else -> null
     }
 
