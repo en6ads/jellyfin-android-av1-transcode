@@ -27,6 +27,7 @@ import org.jellyfin.mobile.player.source.PlaybackDetails
 import org.jellyfin.mobile.player.source.RemoteJellyfinMediaSource
 import org.jellyfin.mobile.utils.Constants
 import org.jellyfin.sdk.api.client.ApiClient
+import org.jellyfin.sdk.api.client.extensions.mediaInfoApi
 import org.jellyfin.sdk.api.client.extensions.systemApi
 import org.jellyfin.sdk.api.client.extensions.videosApi
 import org.jellyfin.sdk.api.operations.VideosApi
@@ -160,6 +161,19 @@ class QueueManager(
     }
 
     /**
+     * Close the live stream a resolve opened when that resolve is about to be replaced by another.
+     * Each PlaybackInfo request opens its own live stream, so a Live TV channel would otherwise
+     * keep a tuner busy for a stream nothing plays.
+     */
+    private suspend fun closeDiscardedLiveStream(mediaSource: RemoteJellyfinMediaSource) {
+        val liveStreamId = mediaSource.liveStreamId ?: return
+        withContext(Dispatchers.IO) {
+            runCatching { apiClient.mediaInfoApi.closeLiveStream(liveStreamId) }
+                .onFailure { error -> Timber.w(error, "Failed to close discarded live stream") }
+        }
+    }
+
+    /**
      * Play a specific media item specified by [itemId] and [mediaSourceId].
      *
      * @return an error of type [PlayerException] or null on success.
@@ -234,6 +248,7 @@ class QueueManager(
                 jellyfinMediaSource.isDolbyVisionProfile7
             ) {
                 Timber.i("Dolby Vision Profile 7 direct play selected; re-resolving without direct play")
+                closeDiscardedLiveStream(jellyfinMediaSource)
                 return startRemotePlayback(
                     itemId = itemId,
                     mediaSourceId = jellyfinMediaSource.id,
@@ -262,6 +277,7 @@ class QueueManager(
                 null
             }
             if (preferredTrack != null) {
+                closeDiscardedLiveStream(jellyfinMediaSource)
                 return startRemotePlayback(
                     itemId = itemId,
                     mediaSourceId = jellyfinMediaSource.id,
