@@ -12,29 +12,29 @@ class DolbyVisionRewriteModeTest {
     @Test
     @DisplayName("automatic leaves the stream alone where the hardware can decode it")
     fun automaticDefersToHardware() {
-        assertFalse(shouldRewriteProfile7(Constants.DV_PROFILE_7_AUTOMATIC, hasDolbyVisionDecoder = true))
-        assertTrue(shouldRewriteProfile7(Constants.DV_PROFILE_7_AUTOMATIC, hasDolbyVisionDecoder = false))
+        assertFalse(shouldRewriteProfile7(Constants.DV_PROFILE_7_AUTOMATIC, decoderSupportsProfile7 = true))
+        assertTrue(shouldRewriteProfile7(Constants.DV_PROFILE_7_AUTOMATIC, decoderSupportsProfile7 = false))
     }
 
     @Test
     @DisplayName("base layer overrides the hardware, for decoders that mishandle dual layer")
     fun baseLayerIgnoresHardware() {
-        assertTrue(shouldRewriteProfile7(Constants.DV_PROFILE_7_BASE_LAYER, hasDolbyVisionDecoder = true))
-        assertTrue(shouldRewriteProfile7(Constants.DV_PROFILE_7_BASE_LAYER, hasDolbyVisionDecoder = false))
+        assertTrue(shouldRewriteProfile7(Constants.DV_PROFILE_7_BASE_LAYER, decoderSupportsProfile7 = true))
+        assertTrue(shouldRewriteProfile7(Constants.DV_PROFILE_7_BASE_LAYER, decoderSupportsProfile7 = false))
     }
 
     @Test
     @DisplayName("never rewrites nothing, whatever the hardware")
     fun neverRewritesNothing() {
-        assertFalse(shouldRewriteProfile7(Constants.DV_PROFILE_7_NEVER, hasDolbyVisionDecoder = true))
-        assertFalse(shouldRewriteProfile7(Constants.DV_PROFILE_7_NEVER, hasDolbyVisionDecoder = false))
+        assertFalse(shouldRewriteProfile7(Constants.DV_PROFILE_7_NEVER, decoderSupportsProfile7 = true))
+        assertFalse(shouldRewriteProfile7(Constants.DV_PROFILE_7_NEVER, decoderSupportsProfile7 = false))
     }
 
     @Test
     @DisplayName("an unrecognised stored value behaves as automatic rather than disabling playback")
     fun unknownValueFallsBackToAutomatic() {
-        assertTrue(shouldRewriteProfile7("something_from_a_future_version", hasDolbyVisionDecoder = false))
-        assertFalse(shouldRewriteProfile7("something_from_a_future_version", hasDolbyVisionDecoder = true))
+        assertTrue(shouldRewriteProfile7("something_from_a_future_version", decoderSupportsProfile7 = false))
+        assertFalse(shouldRewriteProfile7("something_from_a_future_version", decoderSupportsProfile7 = true))
     }
 }
 

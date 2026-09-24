@@ -120,7 +120,7 @@
     <string name="pref_exoplayer_direct_play_ass_description">Use experimental client-side subtitle rendering, may not always work</string>
     <string name="pref_exoplayer_dv_profile_7_mode">Dolby Vision Profile 7</string>
     <string name="dv_profile_7_automatic">Automatic</string>
-    <string name="dv_profile_7_automatic_description">Use this device\'s Dolby Vision decoder if it has one, otherwise play the HDR10 base layer</string>
+    <string name="dv_profile_7_automatic_description">Use this device\'s Dolby Vision decoder if it supports Profile 7, otherwise play the HDR10 base layer</string>
     <string name="dv_profile_7_base_layer">Always play the base layer</string>
     <string name="dv_profile_7_base_layer_description">Ignore any Dolby Vision decoder and play these files as HDR10. For devices that claim Dolby Vision support but handle dual-layer files badly</string>
     <string name="dv_profile_7_never">Never play directly</string>

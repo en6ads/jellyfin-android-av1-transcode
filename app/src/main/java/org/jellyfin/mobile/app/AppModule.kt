@@ -241,7 +241,7 @@ val applicationModule = module {
         // Evaluated per track rather than here, so changing the setting takes effect on the next
         // playback rather than the next app start.
         val rewriteProfile7 = {
-            shouldRewriteProfile7(appPreferences.dolbyVisionProfile7Mode, DolbyVisionDecoder.isPresent)
+            shouldRewriteProfile7(appPreferences.dolbyVisionProfile7Mode, DolbyVisionDecoder.supportsProfile7)
         }
 
         if (appPreferences.exoPlayerDirectPlayAss) {

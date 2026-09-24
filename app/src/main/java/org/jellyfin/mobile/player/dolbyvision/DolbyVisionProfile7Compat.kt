@@ -101,38 +101,53 @@ private class DolbyVisionProfile7CompatTrackOutput(
 }
 
 /**
- * Whether this device has a Dolby Vision decoder of its own.
+ * The Dolby Vision profiles this device's decoders advertise.
  *
  * Queried rather than assumed, and cached, because [MediaCodecList] enumeration is not cheap and
- * the answer cannot change while the process lives. Note this only reports that a Dolby Vision
- * decoder exists at all - MediaCodec does not say whether it accepts dual layer, which is why
- * the base-layer override has to remain available to the user.
+ * the answer cannot change while the process lives. Most phones with a Dolby Vision decoder
+ * advertise profiles 5 and 8 only, so the mere presence of a decoder says nothing about
+ * Profile 7. A decoder that advertises Profile 7 may still mishandle dual layer, which is why the
+ * base-layer override remains available to the user.
  */
 object DolbyVisionDecoder {
-    val isPresent: Boolean by lazy {
+    val supportedProfiles: Set<Int> by lazy {
         runCatching {
-            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.any { info ->
-                !info.isEncoder && info.supportedTypes.any { type ->
-                    type.equals(MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION, ignoreCase = true)
+            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+                .filter { info -> !info.isEncoder }
+                .flatMap { info ->
+                    info.supportedTypes
+                        .filter { type -> type.equals(MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION, ignoreCase = true) }
+                        .flatMap { type -> info.getCapabilitiesForType(type).profileLevels.asList() }
                 }
-            }
+                .map { profileLevel -> dolbyVisionProfileNumber(profileLevel.profile) }
+                .toSet()
         }.getOrElse { error ->
             Timber.w(error, "Could not enumerate codecs; assuming no Dolby Vision decoder")
-            false
+            emptySet()
         }
     }
+
+    val supportsProfile7: Boolean
+        get() = DOLBY_VISION_PROFILE_7 in supportedProfiles
 }
+
+/**
+ * The profile number for a MediaCodec Dolby Vision profile constant. Those constants are one bit
+ * per profile, with profile N at bit N: DolbyVisionProfileDvheDtb (0x80) is Profile 7,
+ * DolbyVisionProfileDvheSt (0x100) is Profile 8, DolbyVisionProfileDvav110 (0x400) is Profile 10.
+ */
+internal fun dolbyVisionProfileNumber(profileConstant: Int): Int = Integer.numberOfTrailingZeros(profileConstant)
 
 /**
  * Whether a Profile 7 track should be presented as HEVC, for the given setting.
  *
- * Automatic leaves the stream alone where the hardware has a Dolby Vision decoder, so that real
- * Dolby Vision plays rather than being flattened to its base layer.
+ * Automatic leaves the stream alone where a decoder advertises Profile 7, so that real Dolby
+ * Vision plays rather than being flattened to its base layer.
  */
-fun shouldRewriteProfile7(mode: String, hasDolbyVisionDecoder: Boolean): Boolean = when (mode) {
+fun shouldRewriteProfile7(mode: String, decoderSupportsProfile7: Boolean): Boolean = when (mode) {
     Constants.DV_PROFILE_7_BASE_LAYER -> true
     Constants.DV_PROFILE_7_NEVER -> false
-    else -> !hasDolbyVisionDecoder
+    else -> !decoderSupportsProfile7
 }
 
 /**
