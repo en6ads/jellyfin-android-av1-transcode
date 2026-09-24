@@ -1,5 +1,6 @@
 package org.jellyfin.mobile.player.deviceprofile
 
+import android.content.Context
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaFormat
@@ -10,6 +11,7 @@ import org.jellyfin.mobile.app.AppPreferences
 import org.jellyfin.mobile.player.deviceprofile.DeviceProfileBuilder.Companion.AVAILABLE_AUDIO_CODECS
 import org.jellyfin.mobile.player.deviceprofile.DeviceProfileBuilder.Companion.AVAILABLE_VIDEO_CODECS
 import org.jellyfin.mobile.player.deviceprofile.DeviceProfileBuilder.Companion.SUPPORTED_CONTAINER_FORMATS
+import org.jellyfin.mobile.player.dolbyvision.DolbyVisionDecoder
 import org.jellyfin.mobile.utils.Constants
 import org.jellyfin.sdk.model.api.CodecProfile
 import org.jellyfin.sdk.model.api.CodecType
@@ -27,6 +29,7 @@ import org.jellyfin.sdk.model.api.TranscodingProfile
 
 class DeviceProfileBuilder(
     private val appPreferences: AppPreferences,
+    private val context: Context,
 ) {
     private val supportedVideoCodecs: Array<Array<String>>
     private val supportedAudioCodecs: Array<Array<String>>
@@ -259,7 +262,8 @@ class DeviceProfileBuilder(
     fun getDeviceProfile(maxBitrate: Int = MAX_STREAMING_BITRATE): DeviceProfile {
         val containerProfiles = ArrayList<ContainerProfile>()
         val directPlayProfiles = ArrayList<DirectPlayProfile>()
-        val codecProfiles = ArrayList<CodecProfile>()
+        // Must come before the per-container profiles, see transcodeRangeProfiles.
+        val codecProfiles = ArrayList<CodecProfile>(transcodeRangeProfiles())
 
         for (i in SUPPORTED_CONTAINER_FORMATS.indices) {
             val container = SUPPORTED_CONTAINER_FORMATS[i]
@@ -372,9 +376,8 @@ class DeviceProfileBuilder(
                 //
                 // So the DOVI entries are not a claim that this device displays Dolby Vision -
                 // most cannot. They say "do not rank these sources away from my best transcode
-                // target". Direct play of Profile 7 is refused separately and honestly, by
-                // QueueManager re-resolving with enableDirectPlay = false, because that failure
-                // is a silent black screen with no error for any fallback to catch.
+                // target". What the display can really present in a transcode is declared by
+                // transcodeRangeProfiles, which the server applies to the transcode only.
                 add(
                     ProfileCondition(
                         condition = ProfileConditionType.EQUALS_ANY,
@@ -385,6 +388,38 @@ class DeviceProfileBuilder(
                 )
             },
         )
+    }
+
+    /**
+     * Codec profiles that apply only to HLS transcodes, declaring the ranges this display can
+     * present in a stream the server produces.
+     *
+     * The server matches a codec profile whose container is "hls" against the transcode's
+     * sub-container, and only when building the transcode request; ranking and direct play ignore
+     * it. So the per-container profiles can keep declaring every range (see generateCodecProfile)
+     * while the transcode is told the truth. The server applies codec profiles in reverse order,
+     * so these must come first to win. Servers without sub-container support ignore them.
+     */
+    private fun transcodeRangeProfiles(): List<CodecProfile> {
+        val displayHdrTypes = context.displayHdrTypes()
+        val dolbyVisionProfiles = DolbyVisionDecoder.supportedProfiles
+
+        return TRANSCODE_VIDEO_CODECS.map { codec ->
+            CodecProfile(
+                type = CodecType.VIDEO,
+                container = "hls",
+                codec = codec,
+                applyConditions = listOf(),
+                conditions = listOf(
+                    ProfileCondition(
+                        condition = ProfileConditionType.EQUALS_ANY,
+                        property = ProfileConditionValue.VIDEO_RANGE_TYPE,
+                        value = transcodeVideoRangeTypes(codec, displayHdrTypes, dolbyVisionProfiles).joinToString("|"),
+                        isRequired = false,
+                    ),
+                ),
+            )
+        }
     }
 
     private fun getSubtitleProfiles(embedded: Array<String>, external: Array<String>): List<SubtitleProfile> = ArrayList<SubtitleProfile>().apply {
@@ -427,17 +462,17 @@ class DeviceProfileBuilder(
         private const val DEFAULT_H264_MAX_LEVEL = "41"
 
         /**
-         * Every range type the server knows, used as an allow-list that excludes nothing.
-         *
-         * Its job is not to restrict anything - it is the only way to make the server emit a
-         * range list at all, which a server capable of preserving HDR needs in order to match the
-         * output range against something the client has claimed. Matching the server's own
-         * VideoRangeType enum exactly matters: a value the server does not recognise is dropped
-         * rather than rejected, so a typo here degrades silently to tone-mapped SDR.
+         * Every range type the server knows, used as an allow-list that excludes nothing, for
+         * direct play and transcode ranking. What a transcode may actually produce is declared
+         * separately by transcodeRangeProfiles. Matching the server's own VideoRangeType enum
+         * exactly matters: a value the server does not recognise is dropped rather than rejected.
          */
         private const val ALL_VIDEO_RANGE_TYPES =
             "Unknown|SDR|HDR10|HLG|DOVI|DOVIWithHDR10|DOVIWithHLG|DOVIWithSDR|DOVIWithEL|" +
                 "DOVIWithHDR10Plus|DOVIWithELHDR10Plus|DOVIInvalid|HDR10Plus"
+
+        /** The codecs the transcoding profiles can ask the server to produce. */
+        private val TRANSCODE_VIDEO_CODECS = listOf("av1", "hevc", "h264")
 
         private const val TRANSCODE_AUDIO_EFFICIENT = "aac"
 
