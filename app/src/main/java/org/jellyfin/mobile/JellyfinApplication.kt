@@ -27,6 +27,10 @@ class JellyfinApplication : Application() {
         //
         // Read directly rather than through Koin: logging should be up before anything else is,
         // and AppPreferences is a thin wrapper over SharedPreferences with nothing to inject.
+        //
+        // Logs from before redaction existed can contain the access token, so they are removed
+        // whether or not file logging is still switched on.
+        FileLogTree.deleteLegacyLogs(this)
         if (AppPreferences(this).writeLogFile) {
             Timber.plant(FileLogTree(this))
         }
