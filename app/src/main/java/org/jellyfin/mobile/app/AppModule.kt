@@ -38,6 +38,7 @@ import org.jellyfin.mobile.downloads.FileDownloader
 import org.jellyfin.mobile.events.ActivityEventHandler
 import org.jellyfin.mobile.player.deviceprofile.DeviceProfileBuilder
 import org.jellyfin.mobile.player.hls.HlsRoutingMediaSourceFactory
+import org.jellyfin.mobile.player.hls.TrueHdRechunkingHlsExtractorFactory
 import org.jellyfin.mobile.player.interaction.PlayerEvent
 import org.jellyfin.mobile.player.mediasegments.MediaSegmentRepository
 import org.jellyfin.mobile.player.qualityoptions.QualityOptionsProvider
@@ -173,8 +174,10 @@ val applicationModule = module {
 
         // Chunkless preparation would pick renderers from the playlist's CODECS alone, which don't say how
         // many channels an E-AC-3 track has or whether it is JOC. Preparing from the first segment gives
-        // the tracks their real formats.
+        // the tracks their real formats. TrueHD copied into fMP4 has to be regrouped before the audio
+        // sink can play it.
         val hlsMediaSourceFactory = HlsMediaSource.Factory(get<CacheDataSource.Factory>())
+            .setExtractorFactory(TrueHdRechunkingHlsExtractorFactory())
             .setAllowChunklessPreparation(false)
 
         val appPreferences: AppPreferences = get()
