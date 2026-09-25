@@ -20,6 +20,7 @@ import androidx.media3.common.util.Clock
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlaybackException
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.DefaultAnalyticsCollector
 import androidx.media3.exoplayer.mediacodec.MediaCodecDecoderException
@@ -104,6 +105,14 @@ import kotlin.time.Duration.Companion.milliseconds
  */
 private const val MAX_CAUSE_DEPTH = 5
 
+/** Errors of a renderer that can't set up or run a decoder for its track, or can't take its format. */
+private val DECODER_ERROR_CODES = setOf(
+    PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
+    PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
+    PlaybackException.ERROR_CODE_DECODING_FAILED,
+    PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+)
+
 @Suppress("TooManyFunctions")
 class PlayerViewModel(application: Application) : AndroidViewModel(application), KoinComponent, Player.Listener {
     private val apiClient: ApiClient = get()
@@ -146,6 +155,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
     private var analyticsCollector = buildAnalyticsCollector()
     private val initialTracksSelected = AtomicBoolean(false)
     private var fallbackPreferExtensionRenderers = false
+    private var fallbackPreferExtensionAudioRenderers = false
     private var playSpeed = 1f
 
     private var progressUpdateJob: Job? = null
@@ -250,7 +260,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
             else -> DefaultLoadControl()
         }
         val appPreferences: AppPreferences = get()
-        val renderersFactory = DefaultRenderersFactory(getApplication()).apply {
+        val renderersFactory = ExtensionAudioRenderersFactory(
+            getApplication(),
+            preferExtensionAudio = fallbackPreferExtensionAudioRenderers,
+        ).apply {
             setEnableDecoderFallback(true) // Fallback only works if initialization fails, not decoding at playback time
             val rendererMode = when {
                 fallbackPreferExtensionRenderers -> DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER
@@ -832,15 +845,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
     }
 
     override fun onPlayerError(error: PlaybackException) {
-        if (error.cause is MediaCodecDecoderException && !fallbackPreferExtensionRenderers) {
+        if (isAudioDecoderError(error) && !fallbackPreferExtensionAudioRenderers) {
+            // Retrying with the same renderer would fail the same way. The FFmpeg decoder plays what
+            // the platform can't, such as E-AC-3 JOC on an output without passthrough for it. Video
+            // stays on the platform decoder.
+            Timber.e(error, "Audio decoder failed, restarting with FFmpeg audio preferred%s", diagnosticDetail(error))
+            fallbackPreferExtensionAudioRenderers = true
+            restartWithNewPlayer()
+        } else if (error.cause is MediaCodecDecoderException && !fallbackPreferExtensionRenderers) {
             Timber.e(error.cause, "Decoder failed, attempting to restart playback with decoder extensions preferred")
-            playerOrNull?.run {
-                removeListener(this@PlayerViewModel)
-                release()
-            }
             fallbackPreferExtensionRenderers = true
-            setupPlayer()
-            queueManager.tryRestartPlayback()
+            restartWithNewPlayer()
         } else {
             Timber.w(error, "Playback error, attempting fallback%s", diagnosticDetail(error))
             val startPosition = (playerOrNull?.currentPosition ?: 0L).milliseconds
@@ -852,6 +867,28 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
                 }
             }
         }
+    }
+
+    /** Whether [error] is an audio renderer failing to set up or run a decoder for its track. */
+    private fun isAudioDecoderError(error: PlaybackException): Boolean {
+        val player = playerOrNull ?: return false
+        if (error !is ExoPlaybackException || error.type != ExoPlaybackException.TYPE_RENDERER) return false
+        if (error.errorCode !in DECODER_ERROR_CODES || error.rendererIndex == C.INDEX_UNSET) return false
+        return player.getRendererType(error.rendererIndex) == C.TRACK_TYPE_AUDIO
+    }
+
+    /**
+     * Replace the player with one built for the current fallback settings, and play the current media
+     * source again from where it stopped.
+     */
+    private fun restartWithNewPlayer() {
+        playerOrNull?.run {
+            mediaSourceOrNull?.startTime = currentPosition.milliseconds
+            removeListener(this@PlayerViewModel)
+            release()
+        }
+        setupPlayer()
+        queueManager.tryRestartPlayback()
     }
 
     /**
