@@ -40,6 +40,7 @@ import org.jellyfin.mobile.BuildConfig
 import org.jellyfin.mobile.R
 import org.jellyfin.mobile.app.AppPreferences
 import org.jellyfin.mobile.app.PLAYER_EVENT_CHANNEL
+import org.jellyfin.mobile.player.hls.PrimaryVariantTrackSelectionFactory
 import org.jellyfin.mobile.player.interaction.PlayerEvent
 import org.jellyfin.mobile.player.interaction.PlayerLifecycleObserver
 import org.jellyfin.mobile.player.interaction.PlayerMediaSessionCallback
@@ -110,7 +111,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
     val notificationHelper: PlayerNotificationHelper by lazy { PlayerNotificationHelper(this) }
 
     // Media source handling
-    private val trackSelector = DefaultTrackSelector(getApplication())
+    private val trackSelector = DefaultTrackSelector(getApplication(), PrimaryVariantTrackSelectionFactory())
     val trackSelectionHelper = TrackSelectionHelper(this, trackSelector)
     val queueManager = QueueManager(this)
     val mediaSourceOrNull: JellyfinMediaSource?
