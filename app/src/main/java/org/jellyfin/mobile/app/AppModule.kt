@@ -251,9 +251,13 @@ val applicationModule = module {
             shouldRewriteProfile7(appPreferences.dolbyVisionProfile7Mode, DolbyVisionDecoder.supportsProfile7)
         }
 
-        // TrueHD copied into fMP4 has to be regrouped before the audio sink can play it
+        // TrueHD copied into fMP4 has to be regrouped before the audio sink can play it.
+        // Chunkless preparation would pick renderers from the playlist's CODECS alone, which don't say
+        // how many channels an E-AC-3 track has or whether it is JOC, and don't name TrueHD in a way
+        // media3 knows. Preparing from the first segment gives the tracks their real formats.
         val hlsMediaSourceFactory = HlsMediaSource.Factory(mediaDataSourceFactory)
             .setExtractorFactory(TrueHdRechunkingHlsExtractorFactory())
+            .setAllowChunklessPreparation(false)
             .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
 
         if (appPreferences.exoPlayerDirectPlayAss) {
