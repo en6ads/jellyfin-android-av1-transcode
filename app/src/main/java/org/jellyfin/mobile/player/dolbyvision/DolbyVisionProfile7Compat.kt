@@ -2,6 +2,7 @@ package org.jellyfin.mobile.player.dolbyvision
 
 import android.media.MediaCodecList
 import android.media.MediaFormat
+import android.os.Build
 import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MimeTypes
@@ -112,13 +113,26 @@ private class DolbyVisionProfile7CompatTrackOutput(
 object DolbyVisionDecoder {
     val supportedProfiles: Set<Int> by lazy {
         runCatching {
-            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+            val decoders = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
                 .filter { info -> !info.isEncoder }
-                .flatMap { info ->
-                    info.supportedTypes
-                        .filter { type -> type.equals(MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION, ignoreCase = true) }
-                        .flatMap { type -> info.getCapabilitiesForType(type).profileLevels.asList() }
+                .mapNotNull { info ->
+                    val type = info.supportedTypes.firstOrNull { type ->
+                        type.equals(MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION, ignoreCase = true)
+                    } ?: return@mapNotNull null
+                    info to info.getCapabilitiesForType(type).profileLevels.asList()
                 }
+            // Logged so a shared log shows what the device can do with Dolby Vision
+            if (decoders.isEmpty()) Timber.i("No Dolby Vision decoder")
+            for ((info, profileLevels) in decoders) {
+                val hardware = when {
+                    Build.VERSION.SDK_INT < Build.VERSION_CODES.Q -> "unknown"
+                    info.isHardwareAccelerated -> "hardware"
+                    else -> "software"
+                }
+                val description = describeProfileLevels(profileLevels.map { level -> level.profile to level.level })
+                Timber.i("Dolby Vision decoder %s (%s): %s", info.name, hardware, description)
+            }
+            decoders.flatMap { (_, profileLevels) -> profileLevels }
                 .map { profileLevel -> dolbyVisionProfileNumber(profileLevel.profile) }
                 .toSet()
         }.getOrElse { error ->
@@ -137,6 +151,26 @@ object DolbyVisionDecoder {
  * DolbyVisionProfileDvheSt (0x100) is Profile 8, DolbyVisionProfileDvav110 (0x400) is Profile 10.
  */
 internal fun dolbyVisionProfileNumber(profileConstant: Int): Int = Integer.numberOfTrailingZeros(profileConstant)
+
+/**
+ * The level number for a MediaCodec Dolby Vision level constant. Those are one bit per level too,
+ * from DolbyVisionLevelHd24 (0x1), level 1, up.
+ */
+internal fun dolbyVisionLevelNumber(levelConstant: Int): Int = Integer.numberOfTrailingZeros(levelConstant) + 1
+
+/**
+ * Each advertised profile with the highest level advertised for it, such as "profile 8 up to level 9",
+ * from MediaCodec (profile, level) constant pairs.
+ */
+internal fun describeProfileLevels(profileLevels: List<Pair<Int, Int>>): String =
+    profileLevels
+        .groupBy { (profile, _) -> dolbyVisionProfileNumber(profile) }
+        .toSortedMap()
+        .map { (profile, levels) ->
+            "profile $profile up to level ${levels.maxOf { (_, level) -> dolbyVisionLevelNumber(level) }}"
+        }
+        .joinToString()
+        .ifEmpty { "no profiles" }
 
 /**
  * Whether a Profile 7 track should be presented as HEVC, for the given setting.
