@@ -36,6 +36,7 @@ import org.jellyfin.mobile.downloads.DownloadsViewModel
 import org.jellyfin.mobile.downloads.FileDownloader
 import org.jellyfin.mobile.events.ActivityEventHandler
 import org.jellyfin.mobile.player.deviceprofile.DeviceProfileBuilder
+import org.jellyfin.mobile.player.hls.NegativeTfdtFixingDataSource
 import org.jellyfin.mobile.player.interaction.PlayerEvent
 import org.jellyfin.mobile.player.mediasegments.MediaSegmentRepository
 import org.jellyfin.mobile.player.qualityoptions.QualityOptionsProvider
@@ -169,15 +170,18 @@ val applicationModule = module {
             )
         }
 
+        // Lets fMP4 transcodes from servers without the jellyfin/jellyfin#18049 fix play from the start
+        val mediaDataSourceFactory = NegativeTfdtFixingDataSource.Factory(get<CacheDataSource.Factory>())
+
         val appPreferences: AppPreferences = get()
         if (appPreferences.exoPlayerDirectPlayAss) {
             val assHandler: AssHandler = get()
             val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
             val assExtractorsFactory = extractorsFactory.withAssMkvSupport(assSubtitleParserFactory, assHandler)
-            DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), assExtractorsFactory)
+            DefaultMediaSourceFactory(mediaDataSourceFactory, assExtractorsFactory)
                 .setSubtitleParserFactory(assSubtitleParserFactory)
         } else {
-            DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), extractorsFactory)
+            DefaultMediaSourceFactory(mediaDataSourceFactory, extractorsFactory)
         }
     }
 
