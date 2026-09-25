@@ -70,6 +70,12 @@
     <string name="player_error_invalid_play_options">Unable to resolve playback info</string>
     <string name="player_error_network_failure">Unable to load media info from server</string>
     <string name="player_error_unsupported_content">Media cannot be played by this device</string>
+    <string name="player_error_connection_lost">Connection to the server was lost</string>
+    <string name="player_error_connection_too_slow">Connection too slow or unstable to keep playing. Try a lower quality setting</string>
+    <string name="player_error_server_rejected">The server refused the request for this stream</string>
+    <string name="player_error_stream_unreadable">The stream could not be read and may be incomplete</string>
+    <string name="player_error_decoder_failed">This device could not decode the stream</string>
+    <string name="player_error_with_code">Playback failed (%s)</string>
     <string name="player_error_unspecific_exception">Something went wrong with the player</string>
     <string name="playback_info_play_method">Play method: %s</string>
     <string name="playback_info_transcoding">Transcoding: %b</string>
