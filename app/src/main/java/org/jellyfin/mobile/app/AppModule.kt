@@ -8,14 +8,15 @@ import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.DefaultDataSource
-import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ts.TsExtractor
 import androidx.work.WorkManager
@@ -57,9 +58,19 @@ import org.koin.core.module.dsl.viewModel
 import org.koin.core.qualifier.named
 import org.koin.dsl.module
 import java.io.File
+import java.util.concurrent.TimeUnit
 
 const val PLAYER_EVENT_CHANNEL = "PlayerEventChannel"
 private const val TS_SEARCH_PACKETS = 1800
+
+// A transcoded HLS segment can take several seconds before its first byte, well past media3's 8s defaults
+// on a slow link, since the server may still be encoding it.
+private const val MEDIA_CONNECT_TIMEOUT_SECONDS = 30L
+private const val MEDIA_READ_TIMEOUT_SECONDS = 60L
+
+// A fatal load error restarts the session and with it the server's transcode, so retry chunks a few more
+// times than media3's default of 3 first.
+private const val MEDIA_MIN_LOADABLE_RETRY_COUNT = 6
 
 val applicationModule = module {
     single { AppPreferences(androidApplication()) }
@@ -117,7 +128,13 @@ val applicationModule = module {
         val context: Context = get()
         val apiClient: ApiClient = get()
 
-        val baseDataSourceFactory = DefaultHttpDataSource.Factory().apply {
+        // OkHttp retries a request that failed on a stale pooled connection, which HttpURLConnection does not
+        val okHttpClient = get<OkHttpClient>().newBuilder()
+            .connectTimeout(MEDIA_CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(MEDIA_READ_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
+            .build()
+        val baseDataSourceFactory = OkHttpDataSource.Factory(okHttpClient).apply {
             setUserAgent(Util.getUserAgent(context, Constants.APP_INFO_NAME))
         }
 
@@ -169,6 +186,8 @@ val applicationModule = module {
             )
         }
 
+        val loadErrorHandlingPolicy = DefaultLoadErrorHandlingPolicy(MEDIA_MIN_LOADABLE_RETRY_COUNT)
+
         val appPreferences: AppPreferences = get()
         if (appPreferences.exoPlayerDirectPlayAss) {
             val assHandler: AssHandler = get()
@@ -176,8 +195,10 @@ val applicationModule = module {
             val assExtractorsFactory = extractorsFactory.withAssMkvSupport(assSubtitleParserFactory, assHandler)
             DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), assExtractorsFactory)
                 .setSubtitleParserFactory(assSubtitleParserFactory)
+                .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         } else {
             DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), extractorsFactory)
+                .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         }
     }
 
