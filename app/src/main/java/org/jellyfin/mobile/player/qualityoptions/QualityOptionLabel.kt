@@ -8,8 +8,8 @@ private const val BITRATE_MEGA_BIT = 1_000_000
 private const val BITRATE_KILO_BIT = 1_000
 
 /**
- * The user-facing label for a quality option, e.g. "1080p - 10.0 Mbps", or "Auto" for the
- * zero-bitrate option.
+ * The user-facing label for a quality option, e.g. "10 Mbps", or "Auto" for the zero-bitrate
+ * option. It names no resolution: the server picks that from the bitrate, by its own rules.
  *
  * Shared between the in-player quality menu and the pre-playback quality picker so the two
  * cannot drift apart: the same bitrate must read the same way wherever it is offered, or the
@@ -17,7 +17,7 @@ private const val BITRATE_KILO_BIT = 1_000
  */
 fun QualityOption.getLabel(context: Context): String = when (bitrate) {
     0 -> context.getString(R.string.menu_item_auto)
-    else -> "${maxHeight}p - ${formatBitrate(bitrate.toDouble())}"
+    else -> formatBitrate(bitrate.toDouble())
 }
 
 fun formatBitrate(bitrate: Double): String {
