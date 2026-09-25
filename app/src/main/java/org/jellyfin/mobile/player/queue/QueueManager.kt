@@ -33,6 +33,8 @@ import org.jellyfin.sdk.api.client.extensions.mediaInfoApi
 import org.jellyfin.sdk.api.client.extensions.systemApi
 import org.jellyfin.sdk.api.client.extensions.videosApi
 import org.jellyfin.sdk.api.operations.VideosApi
+import org.jellyfin.sdk.model.api.DeviceProfile
+import org.jellyfin.sdk.model.api.DlnaProfileType
 import org.jellyfin.sdk.model.api.MediaProtocol
 import org.jellyfin.sdk.model.api.MediaStream
 import org.jellyfin.sdk.model.api.MediaStreamProtocol
@@ -273,10 +275,12 @@ class QueueManager(
             // (audioStreamIndex == null) always needs a second pass with the track this app
             // computed made explicit, the same way any other audio-track switch works (see
             // selectAudioStreamAndRestartPlayback) - only skipped for an actual user pick.
-            val preferredTrack = if (audioStreamIndex == null && jellyfinMediaSource.needsExplicitAudioTrackPin(maxStreamingBitrate)) {
-                jellyfinMediaSource.resolveDefaultAudioTrack(maxStreamingBitrate)
-            } else {
-                null
+            val copyableAudioCodecs =
+                copyableAudioCodecs(deviceProfile, jellyfinMediaSource.sourceInfo.transcodingContainer)
+            val preferredTrack = when {
+                audioStreamIndex != null -> null
+                !jellyfinMediaSource.needsExplicitAudioTrackPin(maxStreamingBitrate, copyableAudioCodecs) -> null
+                else -> jellyfinMediaSource.resolveDefaultAudioTrack(maxStreamingBitrate, copyableAudioCodecs)
             }
             if (preferredTrack != null) {
                 closeDiscardedLiveStream(jellyfinMediaSource)
@@ -313,6 +317,19 @@ class QueueManager(
         }
         return null
     }
+
+    /**
+     * The audio codecs a transcode into [container] copies rather than re-encodes, as [deviceProfile]
+     * declares them. The transcoding URL can't tell: once the server copies a track, it lists only that
+     * track's codec there.
+     */
+    private fun copyableAudioCodecs(deviceProfile: DeviceProfile, container: String?): Set<String> =
+        deviceProfile.transcodingProfiles
+            .firstOrNull { profile ->
+                profile.type == DlnaProfileType.VIDEO && profile.container.equals(container, ignoreCase = true)
+            }
+            ?.audioCodec?.lowercase()?.split(',')?.toSet()
+            .orEmpty()
 
     /**
      * Reinitialize current media source without changing settings

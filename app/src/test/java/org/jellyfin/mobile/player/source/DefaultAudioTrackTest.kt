@@ -25,19 +25,19 @@ class DefaultAudioTrackTest {
     @Test
     @DisplayName("an mp4 transcode prefers the E-AC-3 Atmos track, even uncapped and for Dolby Vision Profile 7")
     fun mp4TranscodePrefersEac3() {
-        val streams = listOf(video, trueHd, eac3Atmos, commentary)
+        val source = source(listOf(video, trueHd, eac3Atmos, commentary))
 
-        assertEquals(2, source(streams, MP4_COPY).resolveDefaultAudioTrack(maxBitrate = null)?.index)
-        assertEquals(2, source(streams, MP4_COPY).resolveDefaultAudioTrack(maxBitrate = 40_000_000)?.index)
-        assertEquals(2, source(streams, MP4_LOW_BITRATE_COPY).resolveDefaultAudioTrack(maxBitrate = 15_000_000)?.index)
+        assertEquals(2, source.pick(MP4_COPY))
+        assertEquals(2, source.pick(MP4_COPY, maxBitrate = 40_000_000))
+        assertEquals(2, source.pick(MP4_LOW_BITRATE_COPY, maxBitrate = 15_000_000))
     }
 
     @Test
     @DisplayName("TrueHD is kept where the transcode copies it")
     fun keepsCopyableTrueHd() {
-        val source = source(listOf(video, trueHd, eac3Atmos, commentary), "$MP4_COPY,truehd")
+        val source = source(listOf(video, trueHd, eac3Atmos, commentary))
 
-        assertEquals(1, source.resolveDefaultAudioTrack(maxBitrate = null)?.index)
+        assertEquals(1, source.pick("$MP4_COPY,truehd"))
     }
 
     @Test
@@ -45,52 +45,55 @@ class DefaultAudioTrackTest {
     fun keepsDefaultWithoutCopyableTrack() {
         val streams = listOf(video, trueHd, eac3Atmos, commentary)
 
-        assertEquals(1, source(streams, directPlay = true).resolveDefaultAudioTrack(maxBitrate = null)?.index)
-        assertEquals(1, source(streams, TS_COPY).resolveDefaultAudioTrack(maxBitrate = null)?.index)
+        assertEquals(1, source(streams, directPlay = true).pick(MP4_COPY))
+        assertEquals(1, source(streams).pick(TS_COPY))
     }
 
     @Test
     @DisplayName("below the multichannel cap the default is kept, since the downmix re-encodes anyway")
     fun keepsDefaultWhenDownmixing() {
-        val source = source(listOf(video, trueHd, eac3Atmos), "aac")
+        val source = source(listOf(video, trueHd, eac3Atmos))
 
-        assertEquals(1, source.resolveDefaultAudioTrack(maxBitrate = 5_000_000)?.index)
+        assertEquals(1, source.pick("aac", maxBitrate = 5_000_000))
     }
 
     @Test
     @DisplayName("a stereo commentary track is never preferred over the programme")
     fun ignoresCommentary() {
-        val source = source(listOf(video, trueHd, commentary), MP4_COPY)
+        val source = source(listOf(video, trueHd, commentary))
 
-        assertEquals(1, source.resolveDefaultAudioTrack(maxBitrate = null)?.index)
+        assertEquals(1, source.pick(MP4_COPY))
     }
 
     @Test
     @DisplayName("a commentary track is never preferred, even in 5.1")
     fun ignoresSurroundCommentary() {
         val surroundCommentary = audio(2, "eac3", channels = 6, title = "Commentary with Bob Gale")
-        val source = source(listOf(video, trueHd, surroundCommentary), MP4_COPY)
+        val source = source(listOf(video, trueHd, surroundCommentary))
 
-        assertEquals(1, source.resolveDefaultAudioTrack(maxBitrate = null)?.index)
+        assertEquals(1, source.pick(MP4_COPY))
     }
 
     @Test
     @DisplayName("a 5.1 AC-3 track in the same language is copied instead of re-encoding TrueHD")
     fun prefersAc3CompatibilityTrack() {
         val ac3 = audio(2, "ac3", channels = 6)
-        val source = source(listOf(video, trueHd, ac3), MP4_COPY)
+        val source = source(listOf(video, trueHd, ac3))
 
-        assertEquals(2, source.resolveDefaultAudioTrack(maxBitrate = null)?.index)
+        assertEquals(2, source.pick(MP4_COPY))
     }
 
     @Test
     @DisplayName("a track in another language is never preferred")
     fun ignoresOtherLanguages() {
         val dubbed = audio(2, "eac3", channels = 6, language = "fre", atmos = true)
-        val source = source(listOf(video, trueHd, dubbed), MP4_COPY)
+        val source = source(listOf(video, trueHd, dubbed))
 
-        assertEquals(1, source.resolveDefaultAudioTrack(maxBitrate = null)?.index)
+        assertEquals(1, source.pick(MP4_COPY))
     }
+
+    private fun JellyfinMediaSource.pick(copyableCodecs: String, maxBitrate: Int? = null): Int? =
+        resolveDefaultAudioTrack(maxBitrate, copyableCodecs.split(',').toSet())?.index
 
     @Suppress("LongParameterList") // Named arguments with defaults, one per track property that matters
     private fun audio(
@@ -113,12 +116,8 @@ class DefaultAudioTrackTest {
         every { audioSpatialFormat } returns if (atmos) AudioSpatialFormat.DOLBY_ATMOS else AudioSpatialFormat.NONE
     }
 
-    /** A source the server transcodes, copying [audioCodecs], or direct plays. */
-    private fun source(
-        streams: List<MediaStream>,
-        audioCodecs: String? = null,
-        directPlay: Boolean = false,
-    ): JellyfinMediaSource {
+    /** A source the server transcodes, or direct plays. */
+    private fun source(streams: List<MediaStream>, directPlay: Boolean = false): JellyfinMediaSource {
         val sourceInfo = mockk<MediaSourceInfo>(relaxed = true) {
             every { id } returns "source"
             every { runTimeTicks } returns null
@@ -128,9 +127,6 @@ class DefaultAudioTrackTest {
             every { supportsDirectPlay } returns directPlay
             every { supportsDirectStream } returns false
             every { supportsTranscoding } returns true
-            every { transcodingUrl } returns audioCodecs?.let {
-                "/videos/item/master.m3u8?MediaSourceId=source&AudioCodec=$it&SegmentContainer=mp4"
-            }
         }
         return RemoteJellyfinMediaSource(
             itemId = UUID.randomUUID(),
@@ -144,7 +140,7 @@ class DefaultAudioTrackTest {
     }
 
     private companion object {
-        // The device profile's lists, as they appear in the transcoding URL
+        // The device profile's lists
         const val MP4_COPY = "aac,ac3,eac3,dts"
         const val MP4_LOW_BITRATE_COPY = "aac,eac3"
         const val TS_COPY = "aac,ac3,mp3"

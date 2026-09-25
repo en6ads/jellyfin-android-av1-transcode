@@ -13,7 +13,6 @@ import org.jellyfin.sdk.model.api.MediaStreamType
 import org.jellyfin.sdk.model.api.PlayMethod
 import org.jellyfin.sdk.model.api.SubtitleDeliveryMethod
 import org.jellyfin.sdk.model.extensions.ticks
-import java.net.URLDecoder
 import java.util.UUID
 import kotlin.time.Duration
 
@@ -171,9 +170,9 @@ sealed class JellyfinMediaSource(
      *
      * Only a transcode can copy one track where it would re-encode another, so this resolve's own
      * outcome decides, and direct play keeps [fileDefaultAudioStream]: it hands the file's tracks
-     * to the player untouched. A transcode copies only the codecs its request lists (see
-     * [transcodingAudioCodecs]), which the device profile sets per container and bitrate - ts/mkv
-     * never copy eac3, for example (see TS_AUDIO_CODECS_COPY). A default track outside that list
+     * to the player untouched. A transcode copies only [copyableCodecs], which the device profile
+     * declares per container and bitrate - ts/mkv never copy eac3, for example (see
+     * TS_AUDIO_CODECS_COPY). A default track outside that list
      * gets crushed to plain AAC regardless, so if the source also has a track of the same
      * programme that *can* be copied, preferring it avoids a pointless re-encode - spatial audio
      * (e.g. EAC3/JOC) first, since a straight copy preserves it far better than a fresh AAC
@@ -185,7 +184,7 @@ sealed class JellyfinMediaSource(
      * merely reassigning [selectedAudioStream] here would be silently ignored - the caller must
      * re-resolve the media source with this stream's index to actually take effect.
      */
-    fun resolveDefaultAudioTrack(maxBitrate: Int?): MediaStream? {
+    fun resolveDefaultAudioTrack(maxBitrate: Int?, copyableCodecs: Set<String>): MediaStream? {
         val fileDefault = fileDefaultAudioStream ?: return null
         if (playMethod != PlayMethod.TRANSCODE) return fileDefault
 
@@ -195,7 +194,6 @@ sealed class JellyfinMediaSource(
         // chosen.
         if (maxBitrate != null && maxBitrate < Constants.MULTICHANNEL_AUDIO_MIN_BITRATE) return fileDefault
 
-        val copyableCodecs = transcodingAudioCodecs
         if (fileDefault.codec?.lowercase() in copyableCodecs) return fileDefault
 
         val copyable = audioStreams.filter { stream ->
@@ -205,19 +203,6 @@ sealed class JellyfinMediaSource(
             ?: copyable.firstOrNull()
             ?: fileDefault
     }
-
-    /**
-     * The audio codecs this transcode copies rather than re-encodes: the AudioCodec parameter of
-     * its transcoding URL, the list the device profile gave for the container and bitrate the
-     * server chose.
-     */
-    private val transcodingAudioCodecs: Set<String>
-        get() {
-            val query = sourceInfo.transcodingUrl?.substringAfter('?', "") ?: return emptySet()
-            val parameter = query.split('&').firstOrNull { it.startsWith("AudioCodec=", ignoreCase = true) }
-                ?: return emptySet()
-            return URLDecoder.decode(parameter.substringAfter('='), "UTF-8").lowercase().split(',').toSet()
-        }
 
     /**
      * Whether this track carries the same programme as [fileDefault], so it can be played in its
@@ -247,9 +232,9 @@ sealed class JellyfinMediaSource(
      * default. Skipping the extra pass otherwise avoids a pointless second PlaybackInfo call and
      * a discarded partial transcode job on every single playback start.
      */
-    fun needsExplicitAudioTrackPin(maxBitrate: Int?): Boolean {
+    fun needsExplicitAudioTrackPin(maxBitrate: Int?, copyableCodecs: Set<String>): Boolean {
         if (audioStreams.count { it.isDefault } > 1) return true
-        return resolveDefaultAudioTrack(maxBitrate) !== fileDefaultAudioStream
+        return resolveDefaultAudioTrack(maxBitrate, copyableCodecs) !== fileDefaultAudioStream
     }
 
     /**
