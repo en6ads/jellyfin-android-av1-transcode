@@ -22,7 +22,11 @@ class TranscodeVideoRangesTest {
         )
         assertEquals(
             listOf("SDR", "HDR10", "HDR10Plus", "HLG"),
-            transcodeVideoRangeTypes("hevc", setOf(HDR_TYPE_HDR10, HDR_TYPE_HDR10_PLUS, HDR_TYPE_HLG, HDR_TYPE_DOLBY_VISION), emptySet()),
+            transcodeVideoRangeTypes(
+                codec = "hevc",
+                displayHdrTypes = setOf(HDR_TYPE_HDR10, HDR_TYPE_HDR10_PLUS, HDR_TYPE_HLG, HDR_TYPE_DOLBY_VISION),
+                dolbyVisionProfiles = emptySet(),
+            ),
         )
     }
 

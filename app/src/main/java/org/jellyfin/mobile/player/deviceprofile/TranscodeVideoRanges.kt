@@ -23,7 +23,11 @@ private const val DOLBY_VISION_PROFILE_10 = 10
  * video for an SDR screen. Dolby Vision types only for the profiles a decoder advertises for
  * [codec], otherwise the server removes the Dolby Vision metadata from a compatible base layer.
  */
-internal fun transcodeVideoRangeTypes(codec: String, displayHdrTypes: Set<Int>, dolbyVisionProfiles: Set<Int>): List<String> = buildList {
+internal fun transcodeVideoRangeTypes(
+    codec: String,
+    displayHdrTypes: Set<Int>,
+    dolbyVisionProfiles: Set<Int>,
+): List<String> = buildList {
     add("SDR")
     if (HDR_TYPE_HDR10 in displayHdrTypes) add("HDR10")
     if (HDR_TYPE_HDR10_PLUS in displayHdrTypes) add("HDR10Plus")
