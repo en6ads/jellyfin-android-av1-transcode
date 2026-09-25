@@ -40,6 +40,7 @@ import org.jellyfin.mobile.player.deviceprofile.DeviceProfileBuilder
 import org.jellyfin.mobile.player.dolbyvision.DolbyVisionDecoder
 import org.jellyfin.mobile.player.dolbyvision.DolbyVisionProfile7CompatExtractorsFactory
 import org.jellyfin.mobile.player.dolbyvision.shouldRewriteProfile7
+import org.jellyfin.mobile.player.hls.NegativeTfdtFixingDataSource
 import org.jellyfin.mobile.player.interaction.PlayerEvent
 import org.jellyfin.mobile.player.mediasegments.MediaSegmentRepository
 import org.jellyfin.mobile.player.qualityoptions.QualityOptionsProvider
@@ -236,6 +237,9 @@ val applicationModule = module {
 
         val loadErrorHandlingPolicy = DefaultLoadErrorHandlingPolicy(MINIMUM_LOADABLE_RETRY_COUNT)
 
+        // Lets fMP4 transcodes from servers without the jellyfin/jellyfin#18049 fix play from the start
+        val mediaDataSourceFactory = NegativeTfdtFixingDataSource.Factory(get<CacheDataSource.Factory>())
+
         val appPreferences: AppPreferences = get()
 
         // Evaluated per track rather than here, so changing the setting takes effect on the next
@@ -249,14 +253,14 @@ val applicationModule = module {
             val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
             val assExtractorsFactory = extractorsFactory.withAssMkvSupport(assSubtitleParserFactory, assHandler)
             DefaultMediaSourceFactory(
-                get<CacheDataSource.Factory>(),
+                mediaDataSourceFactory,
                 DolbyVisionProfile7CompatExtractorsFactory(assExtractorsFactory, rewriteProfile7),
             )
                 .setSubtitleParserFactory(assSubtitleParserFactory)
                 .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         } else {
             DefaultMediaSourceFactory(
-                get<CacheDataSource.Factory>(),
+                mediaDataSourceFactory,
                 DolbyVisionProfile7CompatExtractorsFactory(extractorsFactory, rewriteProfile7),
             )
                 .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
