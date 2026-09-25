@@ -218,6 +218,9 @@ class QueueManager(
      * Retry 2: disable direct play, allowing the server to fall back to direct stream.
      * Retry 3: disable direct stream too, forcing the server to transcode.
      *
+     * A Dolby Vision Profile 7 file that fails to direct play skips straight to retry 2's settings:
+     * playing it directly again would fail the same way.
+     *
      * @param startPosition The position at which to resume playback after the retry.
      * @return true if a retry was initiated, false if retries are exhausted or not applicable.
      */
@@ -241,6 +244,9 @@ class QueueManager(
         // retry 1 anyway, so no special-casing needed in the startRemotePlayback call.
         if (currentMediaSource.playMethod == PlayMethod.TRANSCODE && playbackRetries > 1) return false
 
+        val skipDirectPlay = playbackRetries > 1 ||
+            currentMediaSource.playMethod == PlayMethod.DIRECT_PLAY && currentMediaSource.isDolbyVisionProfile7
+
         return startRemotePlayback(
             itemId = currentMediaSource.itemId,
             mediaSourceId = currentMediaSource.id,
@@ -249,7 +255,7 @@ class QueueManager(
             audioStreamIndex = currentMediaSource.selectedAudioStreamIndex,
             subtitleStreamIndex = currentMediaSource.selectedSubtitleStreamIndex,
             playWhenReady = true,
-            enableDirectPlay = if (playbackRetries > 1) false else null,
+            enableDirectPlay = if (skipDirectPlay) false else null,
             enableDirectStream = if (playbackRetries > 2) false else null,
         ) == null
     }

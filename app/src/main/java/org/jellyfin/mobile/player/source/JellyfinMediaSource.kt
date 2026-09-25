@@ -48,6 +48,10 @@ sealed class JellyfinMediaSource(
         // If the default should be played, it would be explicitly set above
         get() = selectedSubtitleStream?.index ?: -1
 
+    /** Whether the selected video stream is Dolby Vision Profile 7 (dual layer). */
+    val isDolbyVisionProfile7: Boolean
+        get() = selectedVideoStream?.dvProfile == DOLBY_VISION_PROFILE_7
+
     init {
         // Classify MediaStreams
         val audio = ArrayList<MediaStream>()
@@ -189,6 +193,10 @@ sealed class JellyfinMediaSource(
                 }
             }.ifEmpty { null }
         } ?: sourceInfo.name.orEmpty()
+    }
+
+    private companion object {
+        const val DOLBY_VISION_PROFILE_7 = 7
     }
 }
 
