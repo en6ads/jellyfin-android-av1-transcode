@@ -14,6 +14,7 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.okhttp.OkHttpDataSource
+import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
@@ -40,7 +41,9 @@ import org.jellyfin.mobile.player.deviceprofile.DeviceProfileBuilder
 import org.jellyfin.mobile.player.dolbyvision.DolbyVisionDecoder
 import org.jellyfin.mobile.player.dolbyvision.DolbyVisionProfile7CompatExtractorsFactory
 import org.jellyfin.mobile.player.dolbyvision.shouldRewriteProfile7
+import org.jellyfin.mobile.player.hls.HlsRoutingMediaSourceFactory
 import org.jellyfin.mobile.player.hls.NegativeTfdtFixingDataSource
+import org.jellyfin.mobile.player.hls.TrueHdRechunkingHlsExtractorFactory
 import org.jellyfin.mobile.player.interaction.PlayerEvent
 import org.jellyfin.mobile.player.mediasegments.MediaSegmentRepository
 import org.jellyfin.mobile.player.qualityoptions.QualityOptionsProvider
@@ -248,22 +251,33 @@ val applicationModule = module {
             shouldRewriteProfile7(appPreferences.dolbyVisionProfile7Mode, DolbyVisionDecoder.supportsProfile7)
         }
 
+        // TrueHD copied into fMP4 has to be regrouped before the audio sink can play it
+        val hlsMediaSourceFactory = HlsMediaSource.Factory(mediaDataSourceFactory)
+            .setExtractorFactory(TrueHdRechunkingHlsExtractorFactory())
+            .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
+
         if (appPreferences.exoPlayerDirectPlayAss) {
             val assHandler: AssHandler = get()
             val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
             val assExtractorsFactory = extractorsFactory.withAssMkvSupport(assSubtitleParserFactory, assHandler)
-            DefaultMediaSourceFactory(
-                mediaDataSourceFactory,
-                DolbyVisionProfile7CompatExtractorsFactory(assExtractorsFactory, rewriteProfile7),
+            HlsRoutingMediaSourceFactory(
+                DefaultMediaSourceFactory(
+                    mediaDataSourceFactory,
+                    DolbyVisionProfile7CompatExtractorsFactory(assExtractorsFactory, rewriteProfile7),
+                )
+                    .setSubtitleParserFactory(assSubtitleParserFactory)
+                    .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy),
+                hlsMediaSourceFactory.setSubtitleParserFactory(assSubtitleParserFactory),
             )
-                .setSubtitleParserFactory(assSubtitleParserFactory)
-                .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         } else {
-            DefaultMediaSourceFactory(
-                mediaDataSourceFactory,
-                DolbyVisionProfile7CompatExtractorsFactory(extractorsFactory, rewriteProfile7),
+            HlsRoutingMediaSourceFactory(
+                DefaultMediaSourceFactory(
+                    mediaDataSourceFactory,
+                    DolbyVisionProfile7CompatExtractorsFactory(extractorsFactory, rewriteProfile7),
+                )
+                    .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy),
+                hlsMediaSourceFactory,
             )
-                .setLoadErrorHandlingPolicy(loadErrorHandlingPolicy)
         }
     }
 
