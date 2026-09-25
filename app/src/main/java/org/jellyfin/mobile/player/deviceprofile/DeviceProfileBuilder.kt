@@ -95,7 +95,7 @@ class DeviceProfileBuilder(
                 type = DlnaProfileType.VIDEO,
                 container = "ts",
                 videoCodec = "h264",
-                audioCodec = "mp1,mp2,mp3,aac,ac3,eac3,dts,mlp,truehd",
+                audioCodec = HLS_TS_AUDIO_CODECS,
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
             ),
@@ -103,7 +103,7 @@ class DeviceProfileBuilder(
                 type = DlnaProfileType.VIDEO,
                 container = "mkv",
                 videoCodec = "h264",
-                audioCodec = AVAILABLE_AUDIO_CODECS[SUPPORTED_CONTAINER_FORMATS.indexOf("mkv")].joinToString(","),
+                audioCodec = HLS_TS_AUDIO_CODECS,
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
             ),
@@ -238,6 +238,13 @@ class DeviceProfileBuilder(
     companion object {
         private const val EXTERNAL_PLAYER_PROFILE_NAME = Constants.APP_INFO_NAME + " External Player"
         private const val DEFAULT_H264_MAX_LEVEL = "41"
+
+        /**
+         * The audio codecs the server will copy into an MPEG-TS or MKV HLS stream. Anything else is
+         * dropped by the server after ranking, so listing it only makes the profile win ranking for
+         * sources it cannot copy. The first entry is what other audio is re-encoded to.
+         */
+        private const val HLS_TS_AUDIO_CODECS = "aac,ac3,eac3,mp3"
 
         /**
          * List of container formats supported by ExoPlayer
