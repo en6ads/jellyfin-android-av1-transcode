@@ -1,7 +1,9 @@
 package org.jellyfin.mobile.player.deviceprofile
 
+import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaFormat
+import android.os.Build
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.jellyfin.mobile.app.AppPreferences
@@ -41,10 +43,13 @@ class DeviceProfileBuilder(
         // Load Android-supported codecs
         val videoCodecs: MutableMap<String, DeviceCodec.Video> = HashMap()
         val audioCodecs: MutableMap<String, DeviceCodec.Audio> = HashMap()
+        val hardwareVideoCodecs = HashSet<String>()
         var maxAvcLevel = 0
         val androidCodecs = MediaCodecList(MediaCodecList.REGULAR_CODECS)
         for (codecInfo in androidCodecs.codecInfos) {
             if (codecInfo.isEncoder) continue
+
+            val isHardwareDecoder = codecInfo.isHardwareDecoder()
 
             for (mimeType in codecInfo.supportedTypes) {
                 val capabilities = codecInfo.getCapabilitiesForType(mimeType)
@@ -59,6 +64,7 @@ class DeviceProfileBuilder(
                 val name = codec.name
                 when (codec) {
                     is DeviceCodec.Video -> {
+                        if (isHardwareDecoder) hardwareVideoCodecs += name
                         if (videoCodecs.containsKey(name)) {
                             videoCodecs[name] = videoCodecs[name]!!.mergeCodec(codec)
                         } else {
@@ -90,11 +96,24 @@ class DeviceProfileBuilder(
         }
         videoCodecsProfiles = videoCodecs.entries.associate { (k, v) -> k to v.profiles }
 
+        // Codecs other than H.264 are only requested when a hardware decoder exists for them.
+        // fMP4 can carry AV1, MPEG-TS cannot.
+        fun transcodeVideoCodecs(vararg preferred: String): String =
+            (preferred.filter { codec -> codec in hardwareVideoCodecs } + "h264").distinct().joinToString(",")
+
         transcodingProfiles = listOf(
             TranscodingProfile(
                 type = DlnaProfileType.VIDEO,
+                container = "mp4",
+                videoCodec = transcodeVideoCodecs("av1", "hevc"),
+                audioCodec = "aac,ac3,eac3,dts",
+                protocol = MediaStreamProtocol.HLS,
+                conditions = emptyList(),
+            ),
+            TranscodingProfile(
+                type = DlnaProfileType.VIDEO,
                 container = "ts",
-                videoCodec = "h264",
+                videoCodec = transcodeVideoCodecs("hevc"),
                 audioCodec = "mp1,mp2,mp3,aac,ac3,eac3,dts,mlp,truehd",
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
@@ -102,7 +121,7 @@ class DeviceProfileBuilder(
             TranscodingProfile(
                 type = DlnaProfileType.VIDEO,
                 container = "mkv",
-                videoCodec = "h264",
+                videoCodec = transcodeVideoCodecs("hevc"),
                 audioCodec = AVAILABLE_AUDIO_CODECS[SUPPORTED_CONTAINER_FORMATS.indexOf("mkv")].joinToString(","),
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
@@ -355,4 +374,23 @@ class DeviceProfileBuilder(
          */
         private const val MAX_MUSIC_TRANSCODING_BITRATE = 384000
     }
+}
+
+/**
+ * Whether this is a hardware video decoder. Below API 29 this uses the same name heuristic as media3's
+ * MediaCodecUtil.isSoftwareOnly.
+ */
+private fun MediaCodecInfo.isHardwareDecoder(): Boolean {
+    if (isEncoder) return false
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) return isHardwareAccelerated && !isSoftwareOnly
+
+    val name = name.lowercase()
+    val isSoftwareOnly = name.startsWith("omx.google.") ||
+        name.startsWith("omx.ffmpeg.") ||
+        (name.startsWith("omx.sec.") && name.contains(".sw.")) ||
+        name == "omx.qcom.video.decoder.hevcswvdec" ||
+        name.startsWith("c2.android.") ||
+        name.startsWith("c2.google.") ||
+        (!name.startsWith("omx.") && !name.startsWith("c2."))
+    return !isSoftwareOnly
 }
