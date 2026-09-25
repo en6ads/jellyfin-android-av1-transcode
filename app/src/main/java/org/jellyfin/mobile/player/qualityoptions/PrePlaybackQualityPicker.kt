@@ -7,20 +7,6 @@ import org.jellyfin.mobile.R
 import kotlin.coroutines.resume
 
 /**
- * Result of the pre-playback quality prompt.
- */
-sealed interface QualityChoice {
-    /** Use the web client's quality setting. */
-    data object Auto : QualityChoice
-
-    /** Cap the stream at [bitrate] bits per second. */
-    data class Capped(val bitrate: Int) : QualityChoice
-
-    /** The prompt was dismissed without choosing; playback should not start. */
-    data object Cancelled : QualityChoice
-}
-
-/**
  * Asks which quality to stream at before the media source is resolved.
  *
  * The item's resolution is not known yet, so the full ladder is offered; the server does not

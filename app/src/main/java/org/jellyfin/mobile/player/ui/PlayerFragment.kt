@@ -148,22 +148,12 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
             }
 
             // Ask before resolving so the stream is only requested at the chosen bitrate
-            var bitrateOverride: Int? = null
-            if (appPreferences.exoPlayerAskQualityBeforePlay && playOptions.playFromDownloads != true) {
-                when (val choice = context.askPlaybackQuality(qualityOptionsProvider, appPreferences.exoPlayerLastQualityBitrate)) {
-                    is QualityChoice.Cancelled -> {
-                        parentFragmentManager.popBackStack()
-                        return@launch
-                    }
-                    is QualityChoice.Auto -> {
-                        appPreferences.exoPlayerLastQualityBitrate = 0
-                    }
-                    is QualityChoice.Capped -> {
-                        appPreferences.exoPlayerLastQualityBitrate = choice.bitrate
-                        bitrateOverride = choice.bitrate
-                    }
-                }
+            val qualityChoice = askPlaybackQualityIfEnabled(playOptions)
+            if (qualityChoice == QualityChoice.Cancelled) {
+                parentFragmentManager.popBackStack()
+                return@launch
             }
+            val bitrateOverride = (qualityChoice as? QualityChoice.Capped)?.bitrate
 
             when (viewModel.queueManager.initializePlaybackQueue(playOptions, preferences, bitrateOverride)) {
                 is PlayerException.InvalidPlayOptions -> context.toast(R.string.player_error_invalid_play_options)
@@ -172,6 +162,27 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
                 null -> Unit // success
             }
         }
+    }
+
+    /**
+     * Asks for the playback quality if enabled and not playing a download, remembering the choice.
+     * Returns [QualityChoice.Auto] when not asked.
+     */
+    private suspend fun askPlaybackQualityIfEnabled(playOptions: PlayOptions): QualityChoice {
+        if (!appPreferences.exoPlayerAskQualityBeforePlay || playOptions.playFromDownloads == true) {
+            return QualityChoice.Auto
+        }
+
+        val choice = requireContext().askPlaybackQuality(
+            qualityOptionsProvider = qualityOptionsProvider,
+            preselectedBitrate = appPreferences.exoPlayerLastQualityBitrate,
+        )
+        when (choice) {
+            is QualityChoice.Auto -> appPreferences.exoPlayerLastQualityBitrate = 0
+            is QualityChoice.Capped -> appPreferences.exoPlayerLastQualityBitrate = choice.bitrate
+            is QualityChoice.Cancelled -> Unit
+        }
+        return choice
     }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
