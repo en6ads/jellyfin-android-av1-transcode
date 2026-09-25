@@ -1,5 +1,6 @@
 package org.jellyfin.mobile.player.deviceprofile
 
+import android.content.Context
 import android.media.MediaCodecList
 import android.media.MediaFormat
 import kotlinx.serialization.json.buildJsonObject
@@ -25,11 +26,13 @@ import org.jellyfin.sdk.model.api.TranscodingProfile
 
 class DeviceProfileBuilder(
     private val appPreferences: AppPreferences,
+    private val context: Context,
 ) {
     private val supportedVideoCodecs: Array<Array<String>>
     private val supportedAudioCodecs: Array<Array<String>>
     private val videoCodecsProfiles: Map<String, Set<String>>
     private val maxAvcRawLevel: Int
+    private val dolbyVisionProfiles: Set<Int>
 
     private val transcodingProfiles: List<TranscodingProfile>
 
@@ -42,6 +45,7 @@ class DeviceProfileBuilder(
         val videoCodecs: MutableMap<String, DeviceCodec.Video> = HashMap()
         val audioCodecs: MutableMap<String, DeviceCodec.Audio> = HashMap()
         var maxAvcLevel = 0
+        val dolbyVisionProfileSet = HashSet<Int>()
         val androidCodecs = MediaCodecList(MediaCodecList.REGULAR_CODECS)
         for (codecInfo in androidCodecs.codecInfos) {
             if (codecInfo.isEncoder) continue
@@ -52,6 +56,13 @@ class DeviceProfileBuilder(
                 if (mimeType == MediaFormat.MIMETYPE_VIDEO_AVC) {
                     for (pl in capabilities.profileLevels) {
                         if (pl.level > maxAvcLevel) maxAvcLevel = pl.level
+                    }
+                }
+
+                if (mimeType.equals(MediaFormat.MIMETYPE_VIDEO_DOLBY_VISION, ignoreCase = true)) {
+                    // Profile N is at bit N of the MediaCodec profile constant
+                    for (pl in capabilities.profileLevels) {
+                        dolbyVisionProfileSet += Integer.numberOfTrailingZeros(pl.profile)
                     }
                 }
 
@@ -76,6 +87,7 @@ class DeviceProfileBuilder(
             }
         }
         maxAvcRawLevel = maxAvcLevel
+        dolbyVisionProfiles = dolbyVisionProfileSet
 
         // Build map of supported codecs from device support and hardcoded data
         supportedVideoCodecs = Array(AVAILABLE_VIDEO_CODECS.size) { i ->
@@ -121,7 +133,8 @@ class DeviceProfileBuilder(
     fun getDeviceProfile(): DeviceProfile {
         val containerProfiles = ArrayList<ContainerProfile>()
         val directPlayProfiles = ArrayList<DirectPlayProfile>()
-        val codecProfiles = ArrayList<CodecProfile>()
+        // Must come first, see transcodeRangeProfiles
+        val codecProfiles = ArrayList<CodecProfile>(transcodeRangeProfiles())
 
         for (i in SUPPORTED_CONTAINER_FORMATS.indices) {
             val container = SUPPORTED_CONTAINER_FORMATS[i]
@@ -200,6 +213,35 @@ class DeviceProfileBuilder(
         )
     }
 
+    /**
+     * Codec profiles declaring the video ranges this display can present in a stream the server produces.
+     *
+     * The server matches a codec profile with container "hls" against the HLS sub-container and only when
+     * building the transcode request, so these do not affect direct play or transcoding profile ranking.
+     * Codec profiles are applied in reverse order, so these come first to take precedence. Servers without
+     * sub-container support ignore them.
+     */
+    private fun transcodeRangeProfiles(): List<CodecProfile> {
+        val displayHdrTypes = context.displayHdrTypes()
+
+        return TRANSCODE_VIDEO_CODECS.map { codec ->
+            CodecProfile(
+                type = CodecType.VIDEO,
+                container = "hls",
+                codec = codec,
+                applyConditions = listOf(),
+                conditions = listOf(
+                    ProfileCondition(
+                        condition = ProfileConditionType.EQUALS_ANY,
+                        property = ProfileConditionValue.VIDEO_RANGE_TYPE,
+                        value = transcodeVideoRangeTypes(codec, displayHdrTypes, dolbyVisionProfiles).joinToString("|"),
+                        isRequired = false,
+                    ),
+                ),
+            )
+        }
+    }
+
     private fun getSubtitleProfiles(embedded: Array<String>, external: Array<String>): List<SubtitleProfile> = ArrayList<SubtitleProfile>().apply {
         for (format in embedded) {
             add(SubtitleProfile(format = format, method = SubtitleDeliveryMethod.EMBED))
@@ -238,6 +280,8 @@ class DeviceProfileBuilder(
     companion object {
         private const val EXTERNAL_PLAYER_PROFILE_NAME = Constants.APP_INFO_NAME + " External Player"
         private const val DEFAULT_H264_MAX_LEVEL = "41"
+
+        private val TRANSCODE_VIDEO_CODECS = listOf("av1", "hevc", "h264")
 
         /**
          * List of container formats supported by ExoPlayer
