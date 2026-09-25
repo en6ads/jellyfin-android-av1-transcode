@@ -7,6 +7,7 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
+import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.source.MergingMediaSource
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +25,7 @@ import org.jellyfin.mobile.player.source.LocalJellyfinMediaSource
 import org.jellyfin.mobile.player.source.MediaSourceResolver
 import org.jellyfin.mobile.player.source.PlaybackDetails
 import org.jellyfin.mobile.player.source.RemoteJellyfinMediaSource
+import org.jellyfin.mobile.player.subtitles.SidecarSubtitleMediaSource
 import org.jellyfin.sdk.api.client.ApiClient
 import org.jellyfin.sdk.api.client.extensions.systemApi
 import org.jellyfin.sdk.api.client.extensions.videosApi
@@ -391,14 +393,27 @@ class QueueManager(
         // DefaultMediaSourceFactory
         val factory = get<MediaSource.Factory>()
 
+        // Subtitles the sidecar source can play load lazily and never hold up playback; the rest keep
+        // media3's default handling
+        val (sidecarSubtitles, otherSubtitles) = externalSubtitleConfigurations
+            .partition(SidecarSubtitleMediaSource::supports)
+
         val mediaItem = MediaItem.Builder()
             .setMediaId(source.itemId.toString())
             .setUri(url)
             .setMimeType(forcedMimeType)
-            .setSubtitleConfigurations(externalSubtitleConfigurations)
+            .setSubtitleConfigurations(otherSubtitles)
             .build()
 
-        return factory.createMediaSource(mediaItem)
+        val mediaSource = factory.createMediaSource(mediaItem)
+        if (sidecarSubtitles.isEmpty()) return mediaSource
+
+        val subtitleDataSourceFactory = get<CacheDataSource.Factory>()
+        val subtitleSources = sidecarSubtitles.map { configuration ->
+            SidecarSubtitleMediaSource(configuration, subtitleDataSourceFactory)
+        }
+        @Suppress("SpreadOperator") // MergingMediaSource only takes varargs, and this runs once per playback
+        return MergingMediaSource(mediaSource, *subtitleSources.toTypedArray())
     }
 
     /**
