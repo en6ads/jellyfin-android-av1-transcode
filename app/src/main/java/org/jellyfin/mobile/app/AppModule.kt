@@ -36,6 +36,8 @@ import org.jellyfin.mobile.downloads.DownloadsViewModel
 import org.jellyfin.mobile.downloads.FileDownloader
 import org.jellyfin.mobile.events.ActivityEventHandler
 import org.jellyfin.mobile.player.deviceprofile.DeviceProfileBuilder
+import org.jellyfin.mobile.player.dolbyvision.DolbyVisionDecoder
+import org.jellyfin.mobile.player.dolbyvision.DolbyVisionProfile7CompatExtractorsFactory
 import org.jellyfin.mobile.player.interaction.PlayerEvent
 import org.jellyfin.mobile.player.mediasegments.MediaSegmentRepository
 import org.jellyfin.mobile.player.qualityoptions.QualityOptionsProvider
@@ -170,14 +172,23 @@ val applicationModule = module {
         }
 
         val appPreferences: AppPreferences = get()
+        // Profile 7 goes to a Dolby Vision decoder that advertises it, and otherwise plays as its HDR10
+        // base layer
+        val rewriteProfile7 = { !DolbyVisionDecoder.supportsProfile7 }
         if (appPreferences.exoPlayerDirectPlayAss) {
             val assHandler: AssHandler = get()
             val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
             val assExtractorsFactory = extractorsFactory.withAssMkvSupport(assSubtitleParserFactory, assHandler)
-            DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), assExtractorsFactory)
+            DefaultMediaSourceFactory(
+                get<CacheDataSource.Factory>(),
+                DolbyVisionProfile7CompatExtractorsFactory(assExtractorsFactory, rewriteProfile7),
+            )
                 .setSubtitleParserFactory(assSubtitleParserFactory)
         } else {
-            DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), extractorsFactory)
+            DefaultMediaSourceFactory(
+                get<CacheDataSource.Factory>(),
+                DolbyVisionProfile7CompatExtractorsFactory(extractorsFactory, rewriteProfile7),
+            )
         }
     }
 
