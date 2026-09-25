@@ -6,6 +6,7 @@ import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.TrackGroup
+import androidx.media3.common.text.Cue
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSourceInputStream
@@ -29,7 +30,9 @@ import androidx.media3.extractor.text.CueEncoder
 import androidx.media3.extractor.text.CuesWithTiming
 import androidx.media3.extractor.text.DefaultSubtitleParserFactory
 import androidx.media3.extractor.text.SubtitleParser
+import androidx.media3.extractor.text.pgs.PgsParser
 import timber.log.Timber
+import java.io.BufferedInputStream
 import java.io.IOException
 import java.io.InputStream
 
@@ -41,6 +44,9 @@ import java.io.InputStream
  * once and only downloads the file when its track is selected. The server may need minutes to extract
  * an embedded subtitle from a large file; playback no longer waits for that, and the cues appear once
  * the file arrives.
+ *
+ * PGS files (.sup) are parsed while they stream in, a display set at a time, so a large bitmap subtitle
+ * track is never held in memory whole.
  */
 @UnstableApi
 class SidecarSubtitleMediaSource(
@@ -48,6 +54,7 @@ class SidecarSubtitleMediaSource(
     private val dataSourceFactory: DataSource.Factory,
 ) : BaseMediaSource() {
     private val uri: Uri = configuration.uri
+    private val isPgs = configuration.mimeType == MimeTypes.APPLICATION_PGS
     private val sourceFormat = Format.Builder()
         .setSampleMimeType(configuration.mimeType)
         .setLanguage(configuration.language)
@@ -60,7 +67,9 @@ class SidecarSubtitleMediaSource(
         .setRoleFlags(configuration.roleFlags)
         .setSampleMimeType(MimeTypes.APPLICATION_MEDIA3_CUES)
         .setCodecs(configuration.mimeType)
-        .setCueReplacementBehavior(PARSER_FACTORY.getCueReplacementBehavior(sourceFormat))
+        .setCueReplacementBehavior(
+            if (isPgs) PgsParser.CUE_REPLACEMENT_BEHAVIOR else PARSER_FACTORY.getCueReplacementBehavior(sourceFormat),
+        )
         .build()
     private val mediaItem = MediaItem.Builder().setUri(uri).build()
 
@@ -231,9 +240,26 @@ class SidecarSubtitleMediaSource(
         override fun load() {
             val dataSource = dataSourceFactory.createDataSource()
             try {
-                loadText(DataSourceInputStream(dataSource, DataSpec(uri)))
+                val input = BufferedInputStream(DataSourceInputStream(dataSource, DataSpec(uri)), READ_BUFFER_SIZE)
+                if (isPgs) loadPgs(input) else loadText(input)
             } finally {
                 DataSourceUtil.closeQuietly(dataSource)
+            }
+        }
+
+        private fun loadPgs(input: InputStream) {
+            val reader = SupReader(input)
+            val parser = PgsParser()
+            // After a retry, skip what an earlier attempt already added
+            val alreadyLoadedUpToUs = samples.lastTimeUs()
+            while (!canceled) {
+                val displaySet = reader.next() ?: return
+                if (alreadyLoadedUpToUs != null && displaySet.timeUs <= alreadyLoadedUpToUs) continue
+                var cues: List<Cue> = emptyList()
+                parser.parse(displaySet.data, 0, displaySet.data.size, SubtitleParser.OutputOptions.allCues()) {
+                    cues = it.cues
+                }
+                samples.add(displaySet.timeUs, Long.MAX_VALUE, cueEncoder.encode(cues, C.TIME_UNSET))
             }
         }
 
@@ -253,17 +279,19 @@ class SidecarSubtitleMediaSource(
 
     companion object {
         private val PARSER_FACTORY = DefaultSubtitleParserFactory()
+        private const val READ_BUFFER_SIZE = 64 * 1024
         private const val MAX_LOAD_ATTEMPTS = 40
         private const val RETRY_STEP_MS = 1_000L
         private const val MAX_RETRY_DELAY_MS = 5_000L
 
         /**
-         * Whether this source can play [configuration]: the text formats media3 parses itself. SSA/ASS is
-         * left to the existing path, which has its own renderer.
+         * Whether this source can play [configuration]: PGS, and the text formats media3 parses itself.
+         * SSA/ASS is left to the existing path, which has its own renderer.
          */
         fun supports(configuration: MediaItem.SubtitleConfiguration): Boolean =
             when (val mimeType = configuration.mimeType) {
-                null, MimeTypes.TEXT_SSA, MimeTypes.APPLICATION_PGS -> false
+                null, MimeTypes.TEXT_SSA -> false
+                MimeTypes.APPLICATION_PGS -> true
                 else -> PARSER_FACTORY.supportsFormat(Format.Builder().setSampleMimeType(mimeType).build())
             }
     }
