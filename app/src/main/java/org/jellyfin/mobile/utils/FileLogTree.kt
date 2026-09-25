@@ -96,8 +96,10 @@ class FileLogTree(context: Context) : Timber.DebugTree() {
          * Query parameters and header values: `api_key=…`, `ApiKey=…`, `X-Emby-Token: …`, and the
          * `Token="…"` field of a `MediaBrowser`/`Authorization` header.
          */
+        private const val SECRET_PARAMETER_NAMES =
+            "api_key|apikey|access_token|AccessToken|X-Emby-Token|X-MediaBrowser-Token|Token"
         private val SECRET_PARAMETER = Regex(
-            """\b(api_key|apikey|access_token|AccessToken|X-Emby-Token|X-MediaBrowser-Token|Token)(=|:\s*)("?)[^&"\s,;]+""",
+            """\b($SECRET_PARAMETER_NAMES)(=|:\s*)("?)[^&"\s,;]+""",
             RegexOption.IGNORE_CASE,
         )
 
@@ -107,7 +109,8 @@ class FileLogTree(context: Context) : Timber.DebugTree() {
         internal fun redact(text: String): String = text
             .replace(SECRET_JSON_MEMBER) { match -> match.groupValues[1] + REDACTED }
             .replace(SECRET_PARAMETER) { match ->
-                match.groupValues[1] + match.groupValues[2] + match.groupValues[3] + REDACTED
+                val (name, separator, quote) = match.destructured
+                name + separator + quote + REDACTED
             }
 
         private fun logDirectory(context: Context) = File(context.filesDir, LOG_DIRECTORY_NAME)
