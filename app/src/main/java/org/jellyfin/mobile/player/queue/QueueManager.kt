@@ -174,8 +174,11 @@ class QueueManager(
             enableDirectPlay = enableDirectPlay,
             enableDirectStream = enableDirectStream,
         ).onSuccess { jellyfinMediaSource ->
-            // Ensure transcoding of the current element is stopped
+            // Ensure transcoding of the current element is stopped. Stop the player first: it would retry
+            // a segment request that stopping the transcode cuts off, and the server would start a new
+            // transcode for it that keeps running until its kill timer.
             getCurrentMediaSourceOrNull()?.let { oldMediaSource ->
+                viewModel.playerOrNull?.stop()
                 viewModel.stopTranscoding(oldMediaSource as RemoteJellyfinMediaSource)
             }
 
