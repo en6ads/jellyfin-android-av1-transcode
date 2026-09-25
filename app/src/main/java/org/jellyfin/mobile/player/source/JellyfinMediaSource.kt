@@ -13,6 +13,7 @@ import org.jellyfin.sdk.model.api.MediaStreamType
 import org.jellyfin.sdk.model.api.PlayMethod
 import org.jellyfin.sdk.model.api.SubtitleDeliveryMethod
 import org.jellyfin.sdk.model.extensions.ticks
+import java.net.URLDecoder
 import java.util.UUID
 import kotlin.time.Duration
 
@@ -168,23 +169,16 @@ sealed class JellyfinMediaSource(
      * tie-break (see [fileDefaultAudioStream]). Returns null only if the source has no audio at
      * all.
      *
-     * Only a transcode into mp4 can copy one track where it would re-encode another, so this
-     * resolve's own outcome decides: direct play hands the file's tracks to the player untouched,
-     * and an HLS transcode into ts/mkv never copies eac3 (see TS_AUDIO_CODECS_COPY), so both keep
-     * [fileDefaultAudioStream]. Preferring an EAC3/JOC track there would only re-encode it to AAC,
-     * a second lossy generation instead of a single lossless-to-AAC one. Uncapped playback and
-     * Dolby Vision Profile 7 sources get the preference too: both are transcoded into mp4
-     * whenever direct play is off or impossible.
-     *
-     * For a transcode into mp4, only a specific codec set can be *copied* -
-     * [Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS] below
-     * [Constants.LOSSLESS_AUDIO_MIN_BITRATE], [Constants.MP4_AUDIO_COPY_CODECS] at or above it. A
-     * default track outside that set (e.g. TrueHD/DTS-HD MA, which mp4 never offers to copy at
-     * any bitrate - see DeviceProfileBuilder's MP4_AUDIO_CODECS_COPY) gets crushed to plain AAC
-     * regardless, so if the source also has an already-efficient track that mp4 *can* copy,
-     * preferring it instead avoids a pointless re-encode - preferring an EAC3/JOC track (spatial
-     * audio) over a plain one when both exist, since a straight copy preserves it far better than
-     * a fresh AAC re-encode would.
+     * Only a transcode can copy one track where it would re-encode another, so this resolve's own
+     * outcome decides, and direct play keeps [fileDefaultAudioStream]: it hands the file's tracks
+     * to the player untouched. A transcode copies only the codecs its request lists (see
+     * [transcodingAudioCodecs]), which the device profile sets per container and bitrate - ts/mkv
+     * never copy eac3, for example (see TS_AUDIO_CODECS_COPY). A default track outside that list
+     * gets crushed to plain AAC regardless, so if the source also has a track of the same
+     * programme that *can* be copied, preferring it avoids a pointless re-encode - spatial audio
+     * (e.g. EAC3/JOC) first, since a straight copy preserves it far better than a fresh AAC
+     * re-encode would. Preferring a track that is not copied would only re-encode it to AAC, a
+     * second lossy generation instead of a single one from the lossless default.
      *
      * A pure query, not a mutation: for [org.jellyfin.sdk.model.api.PlayMethod.TRANSCODE], the
      * server bakes the audio stream choice into `sourceInfo.transcodingUrl` at resolve time, so
@@ -193,27 +187,37 @@ sealed class JellyfinMediaSource(
      */
     fun resolveDefaultAudioTrack(maxBitrate: Int?): MediaStream? {
         val fileDefault = fileDefaultAudioStream ?: return null
-        val isMp4Transcode = playMethod == PlayMethod.TRANSCODE &&
-            sourceInfo.transcodingContainer.equals("mp4", ignoreCase = true)
-        if (!isMp4Transcode) return fileDefault
+        if (playMethod != PlayMethod.TRANSCODE) return fileDefault
 
-        // Below the stereo cap the same reasoning as for ts above applies: no copy is possible,
-        // so steering towards a copy-eligible track is not just pointless but actively worse.
-        // DeviceProfileBuilder caps transcoded audio to two channels under this ceiling, and a
-        // downmix forces a re-encode no matter which track is chosen.
+        // Below the stereo cap no copy is possible either, so steering towards a copyable track is
+        // not just pointless but actively worse. DeviceProfileBuilder caps transcoded audio to two
+        // channels under this ceiling, and a downmix forces a re-encode no matter which track is
+        // chosen.
         if (maxBitrate != null && maxBitrate < Constants.MULTICHANNEL_AUDIO_MIN_BITRATE) return fileDefault
 
-        val isBitrateCapped = maxBitrate != null && maxBitrate < Constants.LOSSLESS_AUDIO_MIN_BITRATE
-        val copyEligibleCodecs = if (isBitrateCapped) Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS else Constants.MP4_AUDIO_COPY_CODECS
-        if (fileDefault.codec?.lowercase() in copyEligibleCodecs) return fileDefault
+        val copyableCodecs = transcodingAudioCodecs
+        if (fileDefault.codec?.lowercase() in copyableCodecs) return fileDefault
 
-        val candidates = audioStreams.filter { stream -> stream.canReplace(fileDefault) }
-        return candidates.firstOrNull { stream ->
-            stream.codec?.lowercase() == "eac3" && stream.audioSpatialFormat == AudioSpatialFormat.DOLBY_ATMOS
-        } ?: candidates.firstOrNull { stream ->
-            stream.codec?.lowercase() in copyEligibleCodecs
-        } ?: fileDefault
+        val copyable = audioStreams.filter { stream ->
+            stream.codec?.lowercase() in copyableCodecs && stream.canReplace(fileDefault)
+        }
+        return copyable.firstOrNull { stream -> stream.audioSpatialFormat != AudioSpatialFormat.NONE }
+            ?: copyable.firstOrNull()
+            ?: fileDefault
     }
+
+    /**
+     * The audio codecs this transcode copies rather than re-encodes: the AudioCodec parameter of
+     * its transcoding URL, the list the device profile gave for the container and bitrate the
+     * server chose.
+     */
+    private val transcodingAudioCodecs: Set<String>
+        get() {
+            val query = sourceInfo.transcodingUrl?.substringAfter('?', "") ?: return emptySet()
+            val parameter = query.split('&').firstOrNull { it.startsWith("AudioCodec=", ignoreCase = true) }
+                ?: return emptySet()
+            return URLDecoder.decode(parameter.substringAfter('='), "UTF-8").lowercase().split(',').toSet()
+        }
 
     /**
      * Whether this track carries the same programme as [fileDefault], so it can be played in its

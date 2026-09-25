@@ -120,6 +120,17 @@ class DeviceProfileBuilder(
         if (maxBitrate >= Constants.LOSSLESS_AUDIO_MIN_BITRATE) copyCodecs else lowBitrateCopyCodecs
 
     /**
+     * [MP4_AUDIO_CODECS_COPY], plus TrueHD unless ASS subtitles are direct played. TrueHD in fMP4
+     * only plays through the HLS factory that groups its access units, and an HLS item with ASS
+     * subtitles to merge in is still built by DefaultMediaSourceFactory, see
+     * HlsRoutingMediaSourceFactory.
+     */
+    private fun mp4AudioCodecsCopy(): String = when {
+        appPreferences.exoPlayerDirectPlayAss -> MP4_AUDIO_CODECS_COPY
+        else -> "$MP4_AUDIO_CODECS_COPY,truehd"
+    }
+
+    /**
      * Cap the transcode target's channel count when the bitrate ceiling is too tight to justify
      * carrying more than two channels, gated on [Constants.MULTICHANNEL_AUDIO_MIN_BITRATE].
      *
@@ -207,7 +218,7 @@ class DeviceProfileBuilder(
                 type = DlnaProfileType.VIDEO,
                 container = "mp4",
                 videoCodec = fmp4VideoCodecs,
-                audioCodec = transcodeAudioCodecs(maxBitrate, MP4_AUDIO_CODECS_COPY, LOW_BITRATE_AUDIO_COPY),
+                audioCodec = transcodeAudioCodecs(maxBitrate, mp4AudioCodecsCopy(), LOW_BITRATE_AUDIO_COPY),
                 protocol = MediaStreamProtocol.HLS,
                 maxAudioChannels = transcodeAudioChannels(maxBitrate),
                 conditions = transcodeAudioConditions(maxBitrate),
@@ -527,10 +538,10 @@ class DeviceProfileBuilder(
          *   unlike truehd below, this isn't a rare/edge-case muxing combination - so it's
          *   included to let mp4 win the ranking over ts for JOC/Atmos sources instead of losing
          *   AV1 for no reason (ts's own copy list also includes eac3).
-         * - truehd is excluded because it produces a stream this client's mp4 extractor can't
-         *   parse ("codec frame size is not set" from the muxer, and a playback error on
-         *   device) even though the same audio plays fine natively inside its original mkv
-         *   container and is nominally on the server's list.
+         * - truehd is added by [mp4AudioCodecsCopy] where it can be played. The server's ffmpeg
+         *   muxes it into fMP4 correctly, but media3's fragmented MP4 extractor passes its access
+         *   units on one at a time where the audio sink expects 16, so it only plays through
+         *   TrueHdRechunkingHlsExtractorFactory.
          * - mlp isn't in the server's own mp4 allowlist at all, so including it would be a no-op.
          */
         private val MP4_AUDIO_CODECS_COPY = Constants.MP4_AUDIO_COPY_CODECS.joinToString(",")

@@ -183,8 +183,7 @@ object Constants {
 
     /**
      * Audio codecs mp4 can actually copy (not re-encode) once [LOSSLESS_AUDIO_MIN_BITRATE] is
-     * met - matches DeviceProfileBuilder's MP4_AUDIO_CODECS_COPY exactly (single source of
-     * truth, shared with JellyfinMediaSource's own audio-track preference logic).
+     * met - DeviceProfileBuilder's MP4_AUDIO_CODECS_COPY, which adds truehd where it can be played.
      */
     val MP4_AUDIO_COPY_CODECS = setOf("aac", "ac3", "eac3", "dts")
 
