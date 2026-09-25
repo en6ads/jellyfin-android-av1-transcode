@@ -17,7 +17,6 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.Clock
-import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -96,8 +95,6 @@ import timber.log.Timber
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
-
-private const val MAX_LOGGED_CAUSE_DEPTH = 5
 
 @Suppress("TooManyFunctions")
 class PlayerViewModel(application: Application) : AndroidViewModel(application), KoinComponent, Player.Listener {
@@ -779,68 +776,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
         playerOrNull?.updateSkipMediaSegmentButton()
     }
 
-    /**
-     * A message the user can act on, instead of the bare "Source error" that localizedMessage gives
-     * for every IO failure.
-     */
-    private fun describePlaybackError(error: PlaybackException): String = when (error.errorCode) {
-        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
-        PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
-        -> getApplication<Application>().getString(R.string.player_error_connection_too_slow)
-
-        PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
-        PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
-        -> getApplication<Application>().getString(R.string.player_error_connection_lost)
-
-        PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
-        PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
-        PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
-        PlaybackException.ERROR_CODE_IO_INVALID_HTTP_CONTENT_TYPE,
-        -> getApplication<Application>().getString(R.string.player_error_server_rejected)
-
-        PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
-        PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
-        -> getApplication<Application>().getString(R.string.player_error_stream_unreadable)
-
-        PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
-        PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED,
-        PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
-        PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
-        -> getApplication<Application>().getString(R.string.player_error_unsupported_content)
-
-        PlaybackException.ERROR_CODE_DECODER_INIT_FAILED,
-        PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED,
-        PlaybackException.ERROR_CODE_DECODING_FAILED,
-        -> getApplication<Application>().getString(R.string.player_error_decoder_failed)
-
-        else -> getApplication<Application>().getString(R.string.player_error_with_code, error.errorCodeName)
-    }
-
-    /**
-     * The error code name and the cause chain, with the request URI and HTTP status where there is one.
-     * The query string is dropped because it carries the access token.
-     */
-    private fun diagnosticDetail(error: PlaybackException): String = buildString {
-        append("\n  errorCode: ").append(error.errorCodeName)
-
-        var cause: Throwable? = error.cause
-        var depth = 0
-        while (cause != null && depth < MAX_LOGGED_CAUSE_DEPTH) {
-            append("\n  caused by: ").append(cause.javaClass.name)
-            cause.message?.let { message -> append(" - ").append(message) }
-
-            if (cause is HttpDataSource.InvalidResponseCodeException) {
-                append("\n    responseCode: ").append(cause.responseCode)
-            }
-            if (cause is HttpDataSource.HttpDataSourceException) {
-                append("\n    uri: ").append(cause.dataSpec.uri.buildUpon().clearQuery().build())
-            }
-
-            cause = cause.cause
-            depth++
-        }
-    }
-
     override fun onPlayerError(error: PlaybackException) {
         if (error.cause is MediaCodecDecoderException && !fallbackPreferExtensionRenderers) {
             Timber.e(error.cause, "Decoder failed, attempting to restart playback with decoder extensions preferred")
@@ -852,13 +787,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application),
             setupPlayer()
             queueManager.tryRestartPlayback()
         } else {
-            Timber.w(error, "Playback error, attempting fallback%s", diagnosticDetail(error))
+            Timber.w(error, "Playback error, attempting fallback%s", error.diagnosticDetail())
             val startPosition = (playerOrNull?.currentPosition ?: 0L).milliseconds
             fallbackRetryJob?.cancel()
             fallbackRetryJob = viewModelScope.launch {
                 val retried = queueManager.restartPlaybackWithFallback(startPosition)
                 if (!retried) {
-                    _error.postValue(describePlaybackError(error))
+                    _error.postValue(error.describe(getApplication<Application>()))
                 }
             }
         }
