@@ -392,7 +392,8 @@ class PlayerMenus(
         options.forEach { option ->
             val title = when (val bitrate = option.bitrate) {
                 0 -> context.getString(R.string.menu_item_auto)
-                else -> "${option.maxHeight}p - ${formatBitrate(bitrate.toDouble())}"
+                // The server picks the resolution from the bitrate, so name only the bitrate
+                else -> formatBitrate(bitrate.toDouble())
             }
             menu.add(QUALITY_MENU_GROUP, option.bitrate, Menu.NONE, title)
         }

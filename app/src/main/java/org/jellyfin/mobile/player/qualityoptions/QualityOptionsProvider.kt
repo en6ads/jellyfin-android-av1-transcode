@@ -6,21 +6,21 @@ import org.jellyfin.mobile.utils.Constants
 class QualityOptionsProvider {
 
     private val defaultQualityOptions = listOf(
-        QualityOption(maxHeight = 2160, bitrate = 120000000),
-        QualityOption(maxHeight = 2160, bitrate = 80000000),
-        QualityOption(maxHeight = 1080, bitrate = 60000000),
-        QualityOption(maxHeight = 1080, bitrate = 40000000),
-        QualityOption(maxHeight = 1080, bitrate = 20000000),
-        QualityOption(maxHeight = 1080, bitrate = 15000000),
-        QualityOption(maxHeight = 1080, bitrate = 10000000),
-        QualityOption(maxHeight = 720, bitrate = 8000000),
-        QualityOption(maxHeight = 720, bitrate = 6000000),
-        QualityOption(maxHeight = 720, bitrate = 4000000),
-        QualityOption(maxHeight = 480, bitrate = 3000000),
-        QualityOption(maxHeight = 480, bitrate = 1500000),
-        QualityOption(maxHeight = 480, bitrate = 720000),
-        QualityOption(maxHeight = 360, bitrate = 420000),
-        QualityOption(maxHeight = 0, bitrate = 0), // auto
+        QualityOption(minSourceHeight = 2160, bitrate = 120000000),
+        QualityOption(minSourceHeight = 2160, bitrate = 80000000),
+        QualityOption(minSourceHeight = 1080, bitrate = 60000000),
+        QualityOption(minSourceHeight = 1080, bitrate = 40000000),
+        QualityOption(minSourceHeight = 1080, bitrate = 20000000),
+        QualityOption(minSourceHeight = 1080, bitrate = 15000000),
+        QualityOption(minSourceHeight = 1080, bitrate = 10000000),
+        QualityOption(minSourceHeight = 720, bitrate = 8000000),
+        QualityOption(minSourceHeight = 720, bitrate = 6000000),
+        QualityOption(minSourceHeight = 720, bitrate = 4000000),
+        QualityOption(minSourceHeight = 480, bitrate = 3000000),
+        QualityOption(minSourceHeight = 480, bitrate = 1500000),
+        QualityOption(minSourceHeight = 480, bitrate = 720000),
+        QualityOption(minSourceHeight = 360, bitrate = 420000),
+        QualityOption(minSourceHeight = 0, bitrate = 0), // auto
     )
 
     @Suppress("MagicNumber")
@@ -41,6 +41,6 @@ class QualityOptionsProvider {
             else -> 360
         }
 
-        return defaultQualityOptions.takeLastWhile { option -> option.maxHeight <= maxAllowedHeight }
+        return defaultQualityOptions.takeLastWhile { option -> option.minSourceHeight <= maxAllowedHeight }
     }
 }
