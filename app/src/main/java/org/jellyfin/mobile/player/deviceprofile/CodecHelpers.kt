@@ -40,6 +40,7 @@ object CodecHelpers {
         "hevc" -> getHEVCProfile(profile)
         "vp8" -> getVP8Profile(profile)
         "vp9" -> getVP9Profile(profile)
+        "av1" -> getAV1Profile(profile)
         else -> null
     }
 
@@ -121,6 +122,16 @@ object CodecHelpers {
         CodecProfileLevel.VP9Profile3,
         CodecProfileLevel.VP9Profile3HDR,
         -> "Profile 3"
+        else -> null
+    }
+
+    // FFmpeg reports "Main" for 8-bit, 10-bit and HDR AV1 alike, which is what the server compares against.
+    private fun getAV1Profile(profile: Int): String? = when (profile) {
+        CodecProfileLevel.AV1ProfileMain8,
+        CodecProfileLevel.AV1ProfileMain10,
+        CodecProfileLevel.AV1ProfileMain10HDR10,
+        CodecProfileLevel.AV1ProfileMain10HDR10Plus,
+        -> "Main"
         else -> null
     }
 
