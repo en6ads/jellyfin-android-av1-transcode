@@ -2,9 +2,11 @@ package org.jellyfin.mobile
 
 import android.app.Application
 import android.webkit.WebView
+import org.jellyfin.mobile.app.AppPreferences
 import org.jellyfin.mobile.app.apiModule
 import org.jellyfin.mobile.app.applicationModule
 import org.jellyfin.mobile.data.databaseModule
+import org.jellyfin.mobile.utils.FileLogTree
 import org.jellyfin.mobile.utils.JellyTree
 import org.jellyfin.mobile.utils.isWebViewSupported
 import org.koin.android.ext.koin.androidContext
@@ -19,6 +21,11 @@ class JellyfinApplication : Application() {
 
         // Setup logging
         Timber.plant(JellyTree())
+
+        // Keep a log file that can be shared from the settings, read before Koin is started
+        if (AppPreferences(this).writeLogFile) {
+            Timber.plant(FileLogTree(this))
+        }
 
         if (BuildConfig.DEBUG) {
             // Enable WebView debugging

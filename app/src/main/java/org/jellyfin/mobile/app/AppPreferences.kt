@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
 import androidx.core.content.edit
+import org.jellyfin.mobile.BuildConfig
 import org.jellyfin.mobile.downloads.DownloadMethod
 import org.jellyfin.mobile.player.mediasegments.MediaSegmentAction
 import org.jellyfin.mobile.player.mediasegments.toMediaSegmentActionsString
@@ -127,6 +128,13 @@ class AppPreferences(context: Context) {
 
     val exoPlayerNetworkBuffer: String
         get() = sharedPreferences.getString(Constants.PREF_EXOPLAYER_NETWORK_BUFFER, Constants.NETWORK_BUFFER_AUTO)!!
+
+    /**
+     * Whether log output is also written to a file that can be shared from the settings. Off by
+     * default in release builds.
+     */
+    val writeLogFile: Boolean
+        get() = sharedPreferences.getBoolean(Constants.PREF_WRITE_LOG_FILE, BuildConfig.DEBUG)
 
     @ExternalPlayerPackage
     var externalPlayerApp: String

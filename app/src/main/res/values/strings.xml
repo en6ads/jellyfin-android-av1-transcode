@@ -112,6 +112,14 @@
     <string name="pref_exoplayer_allow_horizontal_gesture_summary">Allow horizontal gesture control for video seeking</string>
     <string name="pref_exoplayer_direct_play_ass">Allow SSA/ASS subtitles in direct play</string>
     <string name="pref_exoplayer_direct_play_ass_description">Use experimental client-side subtitle rendering, may not always work</string>
+    <string name="pref_category_diagnostics">Diagnostics</string>
+    <string name="pref_write_log_file">Write log to a file</string>
+    <string name="pref_write_log_file_description">Keep a copy of the app log on the device so it can be shared after a playback failure</string>
+    <string name="pref_share_log_file">Share log</string>
+    <string name="pref_share_log_file_description">Send the saved log to yourself or a developer</string>
+    <string name="share_log_file_chooser_title">Share log</string>
+    <string name="share_log_file_empty">Nothing has been logged yet</string>
+    <string name="share_log_file_failed">Could not prepare the log for sharing</string>
     <string name="pref_exoplayer_network_buffer">Playback buffer size</string>
     <string name="network_buffer_auto">Auto</string>
     <string name="network_buffer_auto_description">Default buffer, suitable for most playback scenarios</string>
