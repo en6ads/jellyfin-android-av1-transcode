@@ -264,7 +264,8 @@ object CodecHelpers {
      * @return The mimeType or null if not supported.
      */
     fun getSubtitleMimeType(codec: String?): String? {
-        return when (codec) {
+        // Jellyfin names PGS subtitles "PGSSUB", in capitals
+        return when (codec?.lowercase()) {
             "srt", "subrip" -> MimeTypes.APPLICATION_SUBRIP
             "ssa", "ass" -> MimeTypes.TEXT_SSA
             "ttml" -> MimeTypes.APPLICATION_TTML
