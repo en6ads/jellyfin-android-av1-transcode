@@ -64,7 +64,6 @@ class SettingsFragment : Fragment(), BackPressInterceptor {
     private lateinit var backgroundAudioPreference: Preference
     private lateinit var horizontalGesturePreference: Preference
     private lateinit var directPlayAssPreference: Preference
-    private lateinit var dolbyVisionProfile7Preference: Preference
     private lateinit var askQualityBeforePlayPreference: Preference
     private lateinit var networkBufferPreference: Preference
     private lateinit var externalPlayerChoicePreference: Preference
@@ -134,7 +133,6 @@ class SettingsFragment : Fragment(), BackPressInterceptor {
                 backgroundAudioPreference.enabled = selection == VideoPlayerType.EXO_PLAYER
                 horizontalGesturePreference.enabled = selection == VideoPlayerType.EXO_PLAYER
                 directPlayAssPreference.enabled = selection == VideoPlayerType.EXO_PLAYER
-                dolbyVisionProfile7Preference.enabled = selection == VideoPlayerType.EXO_PLAYER
                 askQualityBeforePlayPreference.enabled = selection == VideoPlayerType.EXO_PLAYER
                 networkBufferPreference.enabled = selection == VideoPlayerType.EXO_PLAYER
                 externalPlayerChoicePreference.enabled = selection == VideoPlayerType.EXTERNAL_PLAYER
@@ -179,31 +177,6 @@ class SettingsFragment : Fragment(), BackPressInterceptor {
         directPlayAssPreference = checkBox(Constants.PREF_EXOPLAYER_DIRECT_PLAY_ASS) {
             titleRes = R.string.pref_exoplayer_direct_play_ass
             summaryRes = R.string.pref_exoplayer_direct_play_ass_description
-            enabled = appPreferences.videoPlayerType == VideoPlayerType.EXO_PLAYER
-        }
-        val dolbyVisionProfile7Options = listOf(
-            SelectionItem(
-                Constants.DV_PROFILE_7_AUTOMATIC,
-                R.string.dv_profile_7_automatic,
-                R.string.dv_profile_7_automatic_description,
-            ),
-            SelectionItem(
-                Constants.DV_PROFILE_7_BASE_LAYER,
-                R.string.dv_profile_7_base_layer,
-                R.string.dv_profile_7_base_layer_description,
-            ),
-            SelectionItem(
-                Constants.DV_PROFILE_7_NEVER,
-                R.string.dv_profile_7_never,
-                R.string.dv_profile_7_never_description,
-            ),
-        )
-        dolbyVisionProfile7Preference = singleChoice(
-            Constants.PREF_EXOPLAYER_DV_PROFILE_7_MODE,
-            dolbyVisionProfile7Options,
-        ) {
-            titleRes = R.string.pref_exoplayer_dv_profile_7_mode
-            initialSelection = Constants.DV_PROFILE_7_AUTOMATIC
             enabled = appPreferences.videoPlayerType == VideoPlayerType.EXO_PLAYER
         }
         askQualityBeforePlayPreference = checkBox(Constants.PREF_EXOPLAYER_ASK_QUALITY_BEFORE_PLAY) {

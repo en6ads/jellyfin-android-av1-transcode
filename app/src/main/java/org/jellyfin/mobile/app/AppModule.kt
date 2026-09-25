@@ -40,7 +40,6 @@ import org.jellyfin.mobile.events.ActivityEventHandler
 import org.jellyfin.mobile.player.deviceprofile.DeviceProfileBuilder
 import org.jellyfin.mobile.player.dolbyvision.DolbyVisionDecoder
 import org.jellyfin.mobile.player.dolbyvision.DolbyVisionProfile7CompatExtractorsFactory
-import org.jellyfin.mobile.player.dolbyvision.shouldRewriteProfile7
 import org.jellyfin.mobile.player.hls.HlsRoutingMediaSourceFactory
 import org.jellyfin.mobile.player.hls.NegativeTfdtFixingDataSource
 import org.jellyfin.mobile.player.hls.TrueHdRechunkingHlsExtractorFactory
@@ -245,11 +244,9 @@ val applicationModule = module {
 
         val appPreferences: AppPreferences = get()
 
-        // Evaluated per track rather than here, so changing the setting takes effect on the next
-        // playback rather than the next app start.
-        val rewriteProfile7 = {
-            shouldRewriteProfile7(appPreferences.dolbyVisionProfile7Mode, DolbyVisionDecoder.supportsProfile7)
-        }
+        // Profile 7 goes to a Dolby Vision decoder that advertises it, and otherwise plays as its HDR10
+        // base layer
+        val rewriteProfile7 = { !DolbyVisionDecoder.supportsProfile7 }
 
         // TrueHD copied into fMP4 has to be regrouped before the audio sink can play it.
         // Chunkless preparation would pick renderers from the playlist's CODECS alone, which don't say

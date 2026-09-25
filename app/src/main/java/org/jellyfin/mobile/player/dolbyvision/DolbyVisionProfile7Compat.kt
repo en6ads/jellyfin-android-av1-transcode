@@ -14,7 +14,6 @@ import androidx.media3.extractor.ForwardingExtractor
 import androidx.media3.extractor.ForwardingExtractorOutput
 import androidx.media3.extractor.ForwardingTrackOutput
 import androidx.media3.extractor.TrackOutput
-import org.jellyfin.mobile.utils.Constants
 import timber.log.Timber
 
 /**
@@ -95,8 +94,7 @@ private class DolbyVisionProfile7CompatTrackOutput(
     private val rewriteEnabled: () -> Boolean,
 ) : ForwardingTrackOutput(delegate) {
     override fun format(format: Format) {
-        // Read per track rather than captured once, so changing the setting takes effect on the
-        // next playback instead of the next app start.
+        // Asked per track, so the decoders are only enumerated once something plays
         super.format(if (rewriteEnabled()) asPlainHevcIfProfile7(format) else format)
     }
 }
@@ -107,8 +105,7 @@ private class DolbyVisionProfile7CompatTrackOutput(
  * Queried rather than assumed, and cached, because [MediaCodecList] enumeration is not cheap and
  * the answer cannot change while the process lives. Most phones with a Dolby Vision decoder
  * advertise profiles 5 and 8 only, so the mere presence of a decoder says nothing about
- * Profile 7. A decoder that advertises Profile 7 may still mishandle dual layer, which is why the
- * base-layer override remains available to the user.
+ * Profile 7, which is left to a Dolby Vision decoder only where one advertises it.
  */
 object DolbyVisionDecoder {
     val supportedProfiles: Set<Int> by lazy {
@@ -171,18 +168,6 @@ internal fun describeProfileLevels(profileLevels: List<Pair<Int, Int>>): String 
         }
         .joinToString()
         .ifEmpty { "no profiles" }
-
-/**
- * Whether a Profile 7 track should be presented as HEVC, for the given setting.
- *
- * Automatic leaves the stream alone where a decoder advertises Profile 7, so that real Dolby
- * Vision plays rather than being flattened to its base layer.
- */
-fun shouldRewriteProfile7(mode: String, decoderSupportsProfile7: Boolean): Boolean = when (mode) {
-    Constants.DV_PROFILE_7_BASE_LAYER -> true
-    Constants.DV_PROFILE_7_NEVER -> false
-    else -> !decoderSupportsProfile7
-}
 
 /**
  * Returns [format] with its sample type rewritten to HEVC when it is Dolby Vision Profile 7, and

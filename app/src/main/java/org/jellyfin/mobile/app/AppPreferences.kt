@@ -126,31 +126,6 @@ class AppPreferences(context: Context) {
     val exoPlayerDirectPlayAss: Boolean
         get() = sharedPreferences.getBoolean(Constants.PREF_EXOPLAYER_DIRECT_PLAY_ASS, false)
 
-    /**
-     * How Dolby Vision Profile 7 (dual-layer) should be decoded.
-     *
-     * This replaced a boolean that asked whether the device could decode Profile 7 itself, and
-     * which defaulted to off because the honest answer on most hardware was no - direct play of
-     * such a file produced a silent black screen, so the safe choice was to refuse it and let the
-     * server convert instead.
-     *
-     * That is no longer the trade-off. The player now presents a Profile 7 track as plain HEVC,
-     * so its base layer decodes on any device, and refusing direct play costs a needless
-     * conversion rather than avoiding a failure. Hence a default of
-     * [Constants.DV_PROFILE_7_AUTOMATIC]: native Dolby Vision where the hardware has a decoder,
-     * the HDR10 base layer where it does not, and nothing for the user to know or set.
-     *
-     * The other two exist for hardware the automatic choice gets wrong.
-     * [Constants.DV_PROFILE_7_BASE_LAYER] is for a device that advertises a Dolby Vision decoder
-     * but handles dual-layer badly - the situation jellyfin-androidtv keeps a per-model defect
-     * list for. [Constants.DV_PROFILE_7_NEVER] restores the old behaviour outright.
-     */
-    val dolbyVisionProfile7Mode: String
-        get() = sharedPreferences.getString(
-            Constants.PREF_EXOPLAYER_DV_PROFILE_7_MODE,
-            Constants.DV_PROFILE_7_AUTOMATIC,
-        )!!
-
     val exoPlayerNetworkBuffer: String
         get() = sharedPreferences.getString(Constants.PREF_EXOPLAYER_NETWORK_BUFFER, Constants.NETWORK_BUFFER_AUTO)!!
 
