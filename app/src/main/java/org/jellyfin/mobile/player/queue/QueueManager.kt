@@ -67,9 +67,14 @@ class QueueManager(
      * Handle initial playback options from fragment.
      * Start of a playback session that can contain one or multiple played videos.
      *
+     * @param bitrateOverride a bitrate ceiling chosen before playback, overriding the web client's setting.
      * @return an error of type [PlayerException] or null on success.
      */
-    suspend fun initializePlaybackQueue(playOptions: PlayOptions, preferences: PlayerWebPreferences? = null): PlayerException? {
+    suspend fun initializePlaybackQueue(
+        playOptions: PlayOptions,
+        preferences: PlayerWebPreferences? = null,
+        bitrateOverride: Int? = null,
+    ): PlayerException? {
         currentQueue = playOptions.ids
         currentQueueIndex = playOptions.startIndex
         resetPlaybackFallback()
@@ -79,7 +84,7 @@ class QueueManager(
             else -> playOptions.mediaSourceId?.toUUIDOrNull()
         } ?: return PlayerException.InvalidPlayOptions()
 
-        val maxStreamingBitrate = preferences?.let {
+        val maxStreamingBitrate = bitrateOverride ?: preferences?.let {
             withContext(Dispatchers.IO) {
                 runCatching {
                     val endpoint by apiClient.systemApi.getEndpointInfo()

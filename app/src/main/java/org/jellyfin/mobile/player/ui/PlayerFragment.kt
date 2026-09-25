@@ -39,6 +39,9 @@ import org.jellyfin.mobile.player.PlayerException
 import org.jellyfin.mobile.player.PlayerViewModel
 import org.jellyfin.mobile.player.interaction.PlayOptions
 import org.jellyfin.mobile.player.interaction.PlayerWebPreferences
+import org.jellyfin.mobile.player.qualityoptions.QualityChoice
+import org.jellyfin.mobile.player.qualityoptions.QualityOptionsProvider
+import org.jellyfin.mobile.player.qualityoptions.askPlaybackQuality
 import org.jellyfin.mobile.player.ui.playermenuhelper.PlayerMenuHelper
 import org.jellyfin.mobile.utils.AndroidVersion
 import org.jellyfin.mobile.utils.BackPressInterceptor
@@ -62,6 +65,7 @@ import androidx.media3.ui.R as Media3R
 @Suppress("TooManyFunctions")
 class PlayerFragment : Fragment(), BackPressInterceptor {
     private val appPreferences: AppPreferences by inject()
+    private val qualityOptionsProvider: QualityOptionsProvider by inject()
     private val assHandler: AssHandler by inject()
     private val viewModel: PlayerViewModel by viewModels()
     private var _playerBinding: FragmentPlayerBinding? = null
@@ -142,7 +146,26 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
                 context.toast(R.string.player_error_invalid_play_options)
                 return@launch
             }
-            when (viewModel.queueManager.initializePlaybackQueue(playOptions, preferences)) {
+
+            // Ask before resolving so the stream is only requested at the chosen bitrate
+            var bitrateOverride: Int? = null
+            if (appPreferences.exoPlayerAskQualityBeforePlay && playOptions.playFromDownloads != true) {
+                when (val choice = context.askPlaybackQuality(qualityOptionsProvider, appPreferences.exoPlayerLastQualityBitrate)) {
+                    is QualityChoice.Cancelled -> {
+                        parentFragmentManager.popBackStack()
+                        return@launch
+                    }
+                    is QualityChoice.Auto -> {
+                        appPreferences.exoPlayerLastQualityBitrate = 0
+                    }
+                    is QualityChoice.Capped -> {
+                        appPreferences.exoPlayerLastQualityBitrate = choice.bitrate
+                        bitrateOverride = choice.bitrate
+                    }
+                }
+            }
+
+            when (viewModel.queueManager.initializePlaybackQueue(playOptions, preferences, bitrateOverride)) {
                 is PlayerException.InvalidPlayOptions -> context.toast(R.string.player_error_invalid_play_options)
                 is PlayerException.NetworkFailure -> context.toast(R.string.player_error_network_failure)
                 is PlayerException.UnsupportedContent -> context.toast(R.string.player_error_unsupported_content)

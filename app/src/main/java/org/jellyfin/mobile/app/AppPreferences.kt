@@ -128,6 +128,20 @@ class AppPreferences(context: Context) {
     val exoPlayerNetworkBuffer: String
         get() = sharedPreferences.getString(Constants.PREF_EXOPLAYER_NETWORK_BUFFER, Constants.NETWORK_BUFFER_AUTO)!!
 
+    val exoPlayerAskQualityBeforePlay: Boolean
+        get() = sharedPreferences.getBoolean(Constants.PREF_EXOPLAYER_ASK_QUALITY_BEFORE_PLAY, false)
+
+    /**
+     * The bitrate last chosen in the pre-playback quality picker, 0 for "Auto".
+     */
+    var exoPlayerLastQualityBitrate: Int
+        get() = sharedPreferences.getInt(Constants.PREF_EXOPLAYER_LAST_QUALITY_BITRATE, 0)
+        set(value) {
+            sharedPreferences.edit {
+                putInt(Constants.PREF_EXOPLAYER_LAST_QUALITY_BITRATE, value)
+            }
+        }
+
     @ExternalPlayerPackage
     var externalPlayerApp: String
         get() = sharedPreferences.getString(Constants.PREF_EXTERNAL_PLAYER_APP, ExternalPlayerPackage.SYSTEM_DEFAULT)!!
