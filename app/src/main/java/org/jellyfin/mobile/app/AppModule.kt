@@ -14,6 +14,7 @@ import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.extractor.DefaultExtractorsFactory
@@ -36,6 +37,7 @@ import org.jellyfin.mobile.downloads.DownloadsViewModel
 import org.jellyfin.mobile.downloads.FileDownloader
 import org.jellyfin.mobile.events.ActivityEventHandler
 import org.jellyfin.mobile.player.deviceprofile.DeviceProfileBuilder
+import org.jellyfin.mobile.player.hls.HlsRoutingMediaSourceFactory
 import org.jellyfin.mobile.player.interaction.PlayerEvent
 import org.jellyfin.mobile.player.mediasegments.MediaSegmentRepository
 import org.jellyfin.mobile.player.qualityoptions.QualityOptionsProvider
@@ -169,15 +171,27 @@ val applicationModule = module {
             )
         }
 
+        // Chunkless preparation would pick renderers from the playlist's CODECS alone, which don't say how
+        // many channels an E-AC-3 track has or whether it is JOC. Preparing from the first segment gives
+        // the tracks their real formats.
+        val hlsMediaSourceFactory = HlsMediaSource.Factory(get<CacheDataSource.Factory>())
+            .setAllowChunklessPreparation(false)
+
         val appPreferences: AppPreferences = get()
         if (appPreferences.exoPlayerDirectPlayAss) {
             val assHandler: AssHandler = get()
             val assSubtitleParserFactory = AssSubtitleParserFactory(assHandler)
             val assExtractorsFactory = extractorsFactory.withAssMkvSupport(assSubtitleParserFactory, assHandler)
-            DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), assExtractorsFactory)
-                .setSubtitleParserFactory(assSubtitleParserFactory)
+            HlsRoutingMediaSourceFactory(
+                DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), assExtractorsFactory)
+                    .setSubtitleParserFactory(assSubtitleParserFactory),
+                hlsMediaSourceFactory.setSubtitleParserFactory(assSubtitleParserFactory),
+            )
         } else {
-            DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), extractorsFactory)
+            HlsRoutingMediaSourceFactory(
+                DefaultMediaSourceFactory(get<CacheDataSource.Factory>(), extractorsFactory),
+                hlsMediaSourceFactory,
+            )
         }
     }
 
