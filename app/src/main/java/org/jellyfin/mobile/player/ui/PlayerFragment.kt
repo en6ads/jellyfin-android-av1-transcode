@@ -79,6 +79,7 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
     private val toolbar: Toolbar get() = playerControlsBinding.toolbar
     private val fullscreenSwitcher: ImageButton get() = playerControlsBinding.fullscreenSwitcher
     private var playerMenus: PlayerMenus? = null
+    private var trackChangeJob: Job? = null
 
     private lateinit var playerFullscreenHelper: PlayerFullscreenHelper
     lateinit var playerLockScreenHelper: PlayerLockScreenHelper
@@ -336,9 +337,19 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
     fun onNextChapter() = viewModel.nextChapter()
 
     /**
+     * Apply a track or quality change, unless the previous one is still being applied. A change may
+     * restart playback, which takes a moment, and one made meanwhile would read the state that restart
+     * is replacing and restart playback a second time.
+     */
+    private fun launchTrackChange(change: suspend () -> Unit) {
+        if (trackChangeJob?.isActive == true) return
+        trackChangeJob = lifecycleScope.launch { change() }
+    }
+
+    /**
      * @param callback called if track selection was successful and UI needs to be updated
      */
-    fun onAudioTrackSelected(index: Int, callback: TrackSelectionCallback): Job = lifecycleScope.launch {
+    fun onAudioTrackSelected(index: Int, callback: TrackSelectionCallback) = launchTrackChange {
         if (viewModel.trackSelectionHelper.selectAudioTrack(index)) {
             callback.onTrackSelected(true)
         }
@@ -347,7 +358,7 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
     /**
      * @param callback called if track selection was successful and UI needs to be updated
      */
-    fun onSubtitleSelected(index: Int, callback: TrackSelectionCallback): Job = lifecycleScope.launch {
+    fun onSubtitleSelected(index: Int, callback: TrackSelectionCallback) = launchTrackChange {
         if (viewModel.trackSelectionHelper.selectSubtitleTrack(index)) {
             callback.onTrackSelected(true)
         }
@@ -358,11 +369,11 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
      *
      * @return true if subtitles are enabled now, false if not
      */
-    fun toggleSubtitles(callback: TrackSelectionCallback) = lifecycleScope.launch {
+    fun toggleSubtitles(callback: TrackSelectionCallback) = launchTrackChange {
         callback.onTrackSelected(viewModel.trackSelectionHelper.toggleSubtitles())
     }
 
-    fun onBitrateChanged(bitrate: Int?, callback: TrackSelectionCallback) = lifecycleScope.launch {
+    fun onBitrateChanged(bitrate: Int?, callback: TrackSelectionCallback) = launchTrackChange {
         callback.onTrackSelected(viewModel.changeBitrate(bitrate))
     }
 
