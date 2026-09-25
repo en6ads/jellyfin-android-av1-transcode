@@ -15,6 +15,7 @@ import androidx.media3.extractor.ExtractorInput
 import androidx.media3.extractor.ExtractorOutput
 import androidx.media3.extractor.TrackOutput
 import androidx.media3.extractor.text.SubtitleParser
+import kotlin.math.abs
 
 /**
  * Makes Dolby TrueHD copied into fMP4 HLS playable.
@@ -99,6 +100,12 @@ private class RechunkingExtractorOutput(private val output: ExtractorOutput) : E
  *
  * A group can span two HLS segments: the extractor, and this with it, lives on across the segments
  * of a stream and the samples stay contiguous in the sample queue. A seek creates a new extractor.
+ *
+ * A group must not span a gap between access units either. The sink times the audio by counting
+ * access units, not by the samples' timestamps, and ignores a jump of less than 200 ms, so a gap
+ * inside a group would move all later audio earlier by its length. When the server starts
+ * transcoding at a seek point, its first access unit is followed by a gap of about 60 ms. After a
+ * gap, grouping starts over at the next sync frame.
  */
 @UnstableApi
 internal class TrueHdRechunkingTrackOutput(private val output: TrackOutput) : TrackOutput by output {
@@ -109,6 +116,7 @@ internal class TrueHdRechunkingTrackOutput(private val output: TrackOutput) : Tr
     private var flags = 0
     private var size = 0
     private var offset = 0
+    private var nextTimeUs = C.TIME_UNSET
 
     override fun format(format: Format) {
         isTrueHd = format.sampleMimeType == MimeTypes.AUDIO_TRUEHD
@@ -130,6 +138,11 @@ internal class TrueHdRechunkingTrackOutput(private val output: TrackOutput) : Tr
             output.sampleMetadata(timeUs, flags, size, offset, cryptoData)
             return
         }
+        if (nextTimeUs != C.TIME_UNSET && abs(timeUs - nextTimeUs) > MAX_TIMESTAMP_JITTER_US) {
+            foundSyncFrame = false
+            sampleCount = 0
+        }
+        nextTimeUs = timeUs + ACCESS_UNIT_DURATION_US
         if (!foundSyncFrame) {
             if (flags and C.BUFFER_FLAG_KEY_FRAME == 0) return
             foundSyncFrame = true
@@ -146,5 +159,13 @@ internal class TrueHdRechunkingTrackOutput(private val output: TrackOutput) : Tr
             output.sampleMetadata(this.timeUs, this.flags, this.size, this.offset, cryptoData)
             sampleCount = 0
         }
+    }
+
+    private companion object {
+        /** A TrueHD access unit is 1/1200 s at every sample rate. */
+        const val ACCESS_UNIT_DURATION_US = 1_000_000L / 1_200
+
+        /** Matroska timestamps are in milliseconds, so the access units' timestamps wander by up to one. */
+        const val MAX_TIMESTAMP_JITTER_US = 2_000L
     }
 }

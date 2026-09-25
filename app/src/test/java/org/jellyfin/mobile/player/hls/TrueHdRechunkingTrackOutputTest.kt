@@ -45,6 +45,41 @@ class TrueHdRechunkingTrackOutputTest {
     }
 
     @Test
+    @DisplayName("a gap between access units starts the grouping over at the next sync frame")
+    fun startsOverAfterGap() {
+        val output = RecordingTrackOutput()
+        val rechunker = TrueHdRechunkingTrackOutput(output)
+        rechunker.format(trueHd)
+
+        // As when the server starts transcoding at a seek point: a sync frame, then a 63 ms gap
+        rechunker.sampleMetadata(0, C.BUFFER_FLAG_KEY_FRAME, 1_272, 0, null)
+        val resumeUs = 63_000L
+        for (i in 0 until 128 + 16) {
+            val flags = if (i == 128) C.BUFFER_FLAG_KEY_FRAME else 0
+            rechunker.sampleMetadata(resumeUs + i * ACCESS_UNIT_US, flags, 400, 0, null)
+        }
+
+        assertEquals(listOf(resumeUs + 128 * ACCESS_UNIT_US), output.samples.map { it.timeUs })
+        assertEquals(16 * 400, output.samples.single().size)
+    }
+
+    @Test
+    @DisplayName("timestamps wandering by a millisecond, as Matroska's do, are not a gap")
+    fun toleratesJitter() {
+        val output = RecordingTrackOutput()
+        val rechunker = TrueHdRechunkingTrackOutput(output)
+        rechunker.format(trueHd)
+
+        var timeUs = 0L
+        for (i in 0 until 32) {
+            rechunker.sampleMetadata(timeUs, if (i == 0) C.BUFFER_FLAG_KEY_FRAME else 0, 400, 0, null)
+            timeUs += if (i % 2 == 0) 333L else 1_333L
+        }
+
+        assertEquals(2, output.samples.size)
+    }
+
+    @Test
     @DisplayName("other formats pass through one sample at a time")
     fun passesOtherFormatsThrough() {
         val output = RecordingTrackOutput()
@@ -80,6 +115,6 @@ class TrueHdRechunkingTrackOutputTest {
     }
 
     private companion object {
-        const val ACCESS_UNIT_US = 833L
+        const val ACCESS_UNIT_US = 833L // 1/1200 s
     }
 }
