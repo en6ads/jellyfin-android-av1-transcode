@@ -168,23 +168,16 @@ sealed class JellyfinMediaSource(
      * tie-break (see [fileDefaultAudioStream]). Returns null only if the source has no audio at
      * all.
      *
-     * [maxBitrate] == null (Auto/uncapped) always returns [fileDefaultAudioStream] as-is, no
-     * preference override: with nothing constraining bitrate, direct play is the likely outcome
-     * anyway (no transcode codec-copy concept even applies), and even where a transcode still
-     * happens it's against a ceiling high enough that there's no real re-encode concern to trade
-     * against - so there's no reason to prefer anything over this app's own intended default.
+     * Only a transcode into mp4 can copy one track where it would re-encode another, so this
+     * resolve's own outcome decides: direct play hands the file's tracks to the player untouched,
+     * and an HLS transcode into ts/mkv never copies eac3 (see TS_AUDIO_CODECS_COPY), so both keep
+     * [fileDefaultAudioStream]. Preferring an EAC3/JOC track there would only re-encode it to AAC,
+     * a second lossy generation instead of a single lossless-to-AAC one. Uncapped playback and
+     * Dolby Vision Profile 7 sources get the preference too: both are transcoded into mp4
+     * whenever direct play is off or impossible.
      *
-     * Dolby Vision Profile 7 (dual-layer) sources get the same unconditional pass-through,
-     * regardless of bitrate: confirmed on real hardware that these get excluded onto the ts/mkv
-     * HLS path, and eac3 is never a copy target there (see TS_AUDIO_CODECS_COPY, deliberately
-     * excluded to avoid a confirmed ts/EAC3 decoder crash) - so preferring EAC3/JOC over the
-     * file's own lossless default would still just be re-encoded to AAC, not copied, making it a
-     * second lossy generation (the source's own lossy encode, re-encoded again) instead of a
-     * single-generation TrueHD-to-AAC re-encode. Confirmed worse on real hardware, not better -
-     * this only pays off where a genuine copy is actually possible, which DV7 content never gets.
-     *
-     * For everything else with a genuine finite cap, mp4 can only ever *copy* a specific codec
-     * set - [Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS] below
+     * For a transcode into mp4, only a specific codec set can be *copied* -
+     * [Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS] below
      * [Constants.LOSSLESS_AUDIO_MIN_BITRATE], [Constants.MP4_AUDIO_COPY_CODECS] at or above it. A
      * default track outside that set (e.g. TrueHD/DTS-HD MA, which mp4 never offers to copy at
      * any bitrate - see DeviceProfileBuilder's MP4_AUDIO_CODECS_COPY) gets crushed to plain AAC
@@ -200,34 +193,53 @@ sealed class JellyfinMediaSource(
      */
     fun resolveDefaultAudioTrack(maxBitrate: Int?): MediaStream? {
         val fileDefault = fileDefaultAudioStream ?: return null
-        if (maxBitrate == null || selectedVideoStream?.dvProfile == DOLBY_VISION_PROFILE_7) return fileDefault
+        val isMp4Transcode = playMethod == PlayMethod.TRANSCODE &&
+            sourceInfo.transcodingContainer.equals("mp4", ignoreCase = true)
+        if (!isMp4Transcode) return fileDefault
 
-        // Below the stereo cap the same reasoning as the DV7 pass-through above applies, for the
-        // same reason: no copy is possible, so steering towards a copy-eligible track is not just
-        // pointless but actively worse. DeviceProfileBuilder caps transcoded audio to two channels
-        // under this ceiling, and a downmix forces a re-encode no matter which track is chosen -
-        // so preferring an EAC3/JOC track over the file's own lossless default would stack a
-        // second lossy generation on an already-lossy source, where leaving the default alone
-        // gives a single-generation lossless-to-AAC re-encode instead.
-        if (maxBitrate < Constants.MULTICHANNEL_AUDIO_MIN_BITRATE) return fileDefault
+        // Below the stereo cap the same reasoning as for ts above applies: no copy is possible,
+        // so steering towards a copy-eligible track is not just pointless but actively worse.
+        // DeviceProfileBuilder caps transcoded audio to two channels under this ceiling, and a
+        // downmix forces a re-encode no matter which track is chosen.
+        if (maxBitrate != null && maxBitrate < Constants.MULTICHANNEL_AUDIO_MIN_BITRATE) return fileDefault
 
-        val isBitrateCapped = maxBitrate < Constants.LOSSLESS_AUDIO_MIN_BITRATE
+        val isBitrateCapped = maxBitrate != null && maxBitrate < Constants.LOSSLESS_AUDIO_MIN_BITRATE
         val copyEligibleCodecs = if (isBitrateCapped) Constants.MP4_LOW_BITRATE_AUDIO_COPY_CODECS else Constants.MP4_AUDIO_COPY_CODECS
         if (fileDefault.codec?.lowercase() in copyEligibleCodecs) return fileDefault
 
-        return audioStreams.firstOrNull { stream ->
+        val candidates = audioStreams.filter { stream -> stream.canReplace(fileDefault) }
+        return candidates.firstOrNull { stream ->
             stream.codec?.lowercase() == "eac3" && stream.audioSpatialFormat == AudioSpatialFormat.DOLBY_ATMOS
-        } ?: audioStreams.firstOrNull { stream ->
+        } ?: candidates.firstOrNull { stream ->
             stream.codec?.lowercase() in copyEligibleCodecs
         } ?: fileDefault
     }
+
+    /**
+     * Whether this track carries the same programme as [fileDefault], so it can be played in its
+     * place: the same language, not a commentary, and at least as many channels as a re-encode
+     * of [fileDefault] would keep.
+     */
+    private fun MediaStream.canReplace(fileDefault: MediaStream): Boolean {
+        val minChannels = minOf(fileDefault.channels ?: 0, TRANSCODED_AUDIO_MAX_CHANNELS)
+        return language == fileDefault.language && !isCommentary && (channels ?: 0) >= minChannels
+    }
+
+    /**
+     * Whether this track is a commentary. Jellyfin does not pass on Matroska's commentary flag,
+     * so this goes by the track's title and comment tag.
+     */
+    private val MediaStream.isCommentary: Boolean
+        get() = listOfNotNull(title, comment).any { text ->
+            COMMENTARY_WORDS.any { word -> text.contains(word, ignoreCase = true) }
+        }
 
     /**
      * Whether a non-explicit resolve actually needs the extra round-trip to pin
      * [resolveDefaultAudioTrack] explicitly, rather than letting the server pick on its own.
      * Only true when that would change something: either more than one track is flagged default
      * (the server's own tie-break is unreliable, per [fileDefaultAudioStream]'s doc), or the
-     * low-bitrate preference actually wants a different track than the file's obvious single
+     * copy preference actually wants a different track than the file's obvious single
      * default. Skipping the extra pass otherwise avoids a pointless second PlaybackInfo call and
      * a discarded partial transcode job on every single playback start.
      */
@@ -311,6 +323,12 @@ sealed class JellyfinMediaSource(
 
     private companion object {
         private const val DOLBY_VISION_PROFILE_7 = 7
+
+        /** The most channels the server's audio encoders produce (its _audioTranscodeChannelLookup). */
+        private const val TRANSCODED_AUDIO_MAX_CHANNELS = 6
+
+        /** Commentary, commentaire, commento; Kommentar; comentario, comentário */
+        private val COMMENTARY_WORDS = listOf("comment", "kommentar", "coment")
     }
 }
 
