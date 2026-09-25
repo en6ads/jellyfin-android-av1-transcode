@@ -106,7 +106,12 @@ class DeviceProfileBuilder(
                 type = DlnaProfileType.VIDEO,
                 container = "mp4",
                 videoCodec = transcodeVideoCodecs("av1", "hevc"),
-                audioCodec = "aac,ac3,eac3,dts",
+                // TrueHD in fMP4 plays only through TrueHdRechunkingHlsExtractorFactory, which an HLS item
+                // with ASS subtitles to merge in doesn't go through, see HlsRoutingMediaSourceFactory
+                audioCodec = when {
+                    appPreferences.exoPlayerDirectPlayAss -> "aac,ac3,eac3,dts"
+                    else -> "aac,ac3,eac3,dts,truehd"
+                },
                 protocol = MediaStreamProtocol.HLS,
                 conditions = emptyList(),
             ),
