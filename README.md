@@ -1,3 +1,41 @@
+## About this fork
+
+This is a fork of [jellyfin-android](https://github.com/jellyfin/jellyfin-android) with changes for
+AV1/HEVC HLS transcoding, Dolby Vision Profile 7 (FEL) playback, and audio codec/track selection.
+
+HDR-preserving transcodes also need the matching server fork,
+[en6ads/jellyfin-hdr-transcode](https://github.com/en6ads/jellyfin-hdr-transcode)
+(branch `integration/av1-hdr-tfdt`, currently based on 12.2). Without it the server still
+tone-maps HDR to SDR when it transcodes.
+
+### Building the same APK
+
+`master` is the tested build, also tagged `v2026.09.24-build.15`:
+
+```
+git clone https://github.com/en6ads/jellyfin-android-av1-transcode.git
+cd jellyfin-android-av1-transcode
+git checkout v2026.09.24-build.15
+./gradlew assembleProprietaryDebug
+```
+
+The APK is written to `app/build/outputs/apk/proprietary/debug/`. There are two flavors,
+`proprietary` (default) and `libre`; `assembleProprietaryRelease` needs your own signing config.
+
+### Branches
+
+| branch | what it is |
+|---|---|
+| `master` | the tested build; tag `v2026.09.24-build.15` |
+| `v2026.09.24` (tag) | the previous release, which merged upstream in |
+| `pr/*` | individual changes rebased for submission upstream, one topic each |
+| `fix/*` | standalone fixes not yet folded into a build |
+
+Issues with Jellyfin itself belong upstream. This fork is personal work shared so the same build
+can be reproduced; it is not an official Jellyfin release.
+
+---
+
 <h1 align="center">Jellyfin for Android</h1>
 <h3 align="center">Part of the <a href="https://jellyfin.org">Jellyfin Project</a></h3>
 
