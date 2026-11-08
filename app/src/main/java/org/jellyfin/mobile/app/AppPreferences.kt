@@ -156,6 +156,18 @@ class AppPreferences(context: Context) {
         }
 
     /**
+     * Whether the video is zoomed so the picture, without the black bars around it in the frame, fills the
+     * screen (never cropping it), as chosen in the player's menu.
+     */
+    var exoPlayerFitToPicture: Boolean
+        get() = sharedPreferences.getBoolean(Constants.PREF_EXOPLAYER_FIT_TO_PICTURE, true)
+        set(value) {
+            sharedPreferences.edit {
+                putBoolean(Constants.PREF_EXOPLAYER_FIT_TO_PICTURE, value)
+            }
+        }
+
+    /**
      * Whether log output is also written to a file that can be shared from the settings screen.
      *
      * Defaults to on for debug builds and off for release builds: a debug build is already

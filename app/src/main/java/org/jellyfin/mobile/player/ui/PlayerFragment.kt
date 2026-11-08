@@ -79,6 +79,7 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
     private val toolbar: Toolbar get() = playerControlsBinding.toolbar
     private val fullscreenSwitcher: ImageButton get() = playerControlsBinding.fullscreenSwitcher
     private var playerMenus: PlayerMenus? = null
+    private var pictureFitHelper: PictureFitHelper? = null
     private var trackChangeJob: Job? = null
 
     private lateinit var playerFullscreenHelper: PlayerFullscreenHelper
@@ -245,6 +246,7 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
             }
         }
 
+        startPictureFit()
         playerLockScreenHelper = PlayerLockScreenHelper(this, playerBinding, orientationListener)
         playerGestureHelper = PlayerGestureHelper(this, playerBinding, playerLockScreenHelper)
 
@@ -443,8 +445,27 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
         }
     }
 
+    private fun startPictureFit() {
+        if (!AndroidVersion.isAtLeastN) return
+        pictureFitHelper = PictureFitHelper(
+            playerView,
+            isEnabled = { appPreferences.exoPlayerFitToPicture },
+            isInPictureInPicture = { AndroidVersion.isAtLeastN && requireActivity().isInPictureInPictureMode },
+        ).apply { start() }
+    }
+
+    fun onFitToPictureChanged(enabled: Boolean) {
+        appPreferences.exoPlayerFitToPicture = enabled
+        pictureFitHelper?.refresh()
+    }
+
+    fun onZoomModeChanged() {
+        pictureFitHelper?.refresh()
+    }
+
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean) {
         playerView.useController = !isInPictureInPictureMode
+        pictureFitHelper?.refresh()
         if (isInPictureInPictureMode) {
             playerMenus?.dismissPlaybackInfo()
             playerLockScreenHelper.hideUnlockButton()
@@ -468,6 +489,9 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
 
     override fun onDestroyView() {
         super.onDestroyView()
+        pictureFitHelper?.stop()
+        pictureFitHelper = null
+
         // Detach player from PlayerView
         playerView.player = null
 

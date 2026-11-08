@@ -87,6 +87,7 @@
     <string name="menu_item_auto">Auto</string>
     <string name="menu_item_hardware_decoding">Hardware Decoding</string>
     <string name="menu_item_software_decoding">Software Decoding</string>
+    <string name="menu_item_fit_to_picture">Fit to picture</string>
     <string name="skip_media_segment">Skip</string>
 
     <string name="external_player_invalid_play_method">Invalid play method.</string>

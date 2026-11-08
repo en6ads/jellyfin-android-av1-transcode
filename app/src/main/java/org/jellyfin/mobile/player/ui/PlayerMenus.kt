@@ -18,6 +18,7 @@ import androidx.core.view.updateLayoutParams
 import androidx.media3.ui.DefaultTimeBar
 import androidx.media3.ui.TimeBar
 import org.jellyfin.mobile.R
+import org.jellyfin.mobile.app.AppPreferences
 import org.jellyfin.mobile.databinding.ExoPlayerControlViewBinding
 import org.jellyfin.mobile.databinding.FragmentPlayerBinding
 import org.jellyfin.mobile.player.qualityoptions.QualityOptionsProvider
@@ -28,6 +29,7 @@ import org.jellyfin.mobile.player.source.LocalJellyfinMediaSource
 import org.jellyfin.mobile.player.source.RemoteJellyfinMediaSource
 import org.jellyfin.mobile.player.ui.playermenuhelper.PlayerMenuHelper
 import org.jellyfin.mobile.player.ui.playermenuhelper.SkipMediaSegmentButton
+import org.jellyfin.mobile.utils.AndroidVersion
 import org.jellyfin.sdk.model.api.ChapterInfo
 import org.jellyfin.sdk.model.api.MediaStream
 import org.koin.core.component.KoinComponent
@@ -45,6 +47,7 @@ class PlayerMenus(
 
     private val context = playerBinding.root.context
     private val qualityOptionsProvider: QualityOptionsProvider by inject()
+    private val appPreferences: AppPreferences by inject()
     private val playPauseContainer: View by playerControlsBinding::playPauseContainer
     private val previousButton: View by playerControlsBinding::previousButton
     private val nextButton: View by playerControlsBinding::nextButton
@@ -341,8 +344,19 @@ class PlayerMenus(
             context.getString(R.string.menu_item_software_decoding),
         )
         menu.setGroupCheckable(DECODER_MENU_GROUP, true, true)
+        if (AndroidVersion.isAtLeastN) {
+            menu.add(FIT_MENU_GROUP, Menu.NONE, Menu.NONE, context.getString(R.string.menu_item_fit_to_picture)).apply {
+                isCheckable = true
+                isChecked = appPreferences.exoPlayerFitToPicture
+            }
+        }
 
         setOnMenuItemClickListener { clickedItem: MenuItem ->
+            if (clickedItem.groupId == FIT_MENU_GROUP) {
+                clickedItem.isChecked = !clickedItem.isChecked
+                fragment.onFitToPictureChanged(clickedItem.isChecked)
+                return@setOnMenuItemClickListener true
+            }
             val type = DecoderType.values()[clickedItem.itemId]
             fragment.onDecoderSelected(type)
             clickedItem.isChecked = true
@@ -414,6 +428,7 @@ class PlayerMenus(
         private const val SPEED_MENU_GROUP = 2
         private const val QUALITY_MENU_GROUP = 3
         private const val DECODER_MENU_GROUP = 4
+        private const val FIT_MENU_GROUP = 5
 
         private const val MAX_VIDEO_STREAMS_DISPLAY = 3
         private const val MAX_AUDIO_STREAMS_DISPLAY = 5
