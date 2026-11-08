@@ -5,6 +5,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
+import android.os.SystemClock
 import android.view.PixelCopy
 import android.view.SurfaceView
 import android.view.View
@@ -41,11 +42,13 @@ class PictureFitHelper(
     private var shown = PictureArea.FULL_FRAME
     private var bitmap: Bitmap? = null
     private var copying = false
+    private var copyStartedMs = 0L
     private var mediaItemIndex = -1
     private var videoWidth = 0
     private var videoHeight = 0
     private var failuresLogged = false
     private var running = false
+    private var paused = false
 
     private val tick = object : Runnable {
         override fun run() {
@@ -77,24 +80,39 @@ class PictureFitHelper(
 
     /** The setting, Picture-in-Picture or the zoom mode changed: show the whole frame now if fitting stopped. */
     fun refresh() {
-        if (!fitting()) apply(PictureArea.FULL_FRAME)
+        if (!fitting()) pause()
     }
 
     private fun fitting() =
         isEnabled() && !isInPictureInPicture() && playerView.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT
 
+    /** Shows the whole frame and forgets the area, so fitting again starts afresh rather than from a stale area. */
+    private fun pause() {
+        if (!paused) {
+            paused = true
+            Timber.d("Fit to picture: paused (setting off, zoomed or picture-in-picture)")
+        }
+        decision.reset()
+        apply(PictureArea.FULL_FRAME)
+    }
+
     @Suppress("ReturnCount")
     private fun sample() {
         val player = playerView.player ?: return
         if (!fitting()) {
-            apply(PictureArea.FULL_FRAME)
+            pause()
             return
+        }
+        if (paused) {
+            paused = false
+            Timber.d("Fit to picture: resumed")
         }
 
         restartOnNewVideo(player)
         val size = player.videoSize
         val surfaceView = playerView.videoSurfaceView as? SurfaceView ?: return
         val showing = size.width > 0 && size.height > 0 && player.playbackState == Player.STATE_READY
+        abandonLostCopy()
         if (copying || !showing || !surfaceView.holder.surface.isValid) return
 
         val copyHeight = (COPY_WIDTH * size.height / (size.width * size.pixelWidthHeightRatio)).roundToInt()
@@ -106,12 +124,24 @@ class PictureFitHelper(
             }
         val positionMs = player.currentPosition
         copying = true
+        copyStartedMs = SystemClock.uptimeMillis()
         try {
             PixelCopy.request(surfaceView, target, { result -> onCopied(result, target, positionMs) }, copyHandler)
         } catch (e: IllegalArgumentException) {
             copying = false
             logFailure("copy refused: ${e.message}")
+        } catch (e: IllegalStateException) {
+            copying = false // never left waiting for a copy that was not started
+            logFailure("copy refused: ${e.message}")
         }
+    }
+
+    /** A copy that never reported back: gives up on it, and on its bitmap, which it may still write to. */
+    private fun abandonLostCopy() {
+        if (!copying || SystemClock.uptimeMillis() - copyStartedMs <= COPY_TIMEOUT_MS) return
+        Timber.w("Fit to picture: a frame copy never finished; starting again")
+        copying = false
+        bitmap = null
     }
 
     /** A new item, or a new shape (a stream switched to another resolution): start again from the whole frame. */
@@ -141,7 +171,11 @@ class PictureFitHelper(
                 logFailure("copy failed ($result)")
                 return@post
             }
-            if (running && fitting() && decision.step(positionMs, content)) apply(decision.decided)
+            if (running && fitting()) {
+                // What is shown always follows the decision, not only its changes.
+                decision.step(positionMs, content)
+                apply(decision.decided)
+            }
         }
     }
 
@@ -185,5 +219,6 @@ class PictureFitHelper(
         const val INTERVAL_MS = 250L
         private const val COPY_WIDTH = 480
         private const val MIN_COPY_HEIGHT = 48
+        private const val COPY_TIMEOUT_MS = 2000L
     }
 }
