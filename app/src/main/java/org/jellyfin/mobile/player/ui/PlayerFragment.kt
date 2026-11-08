@@ -59,6 +59,7 @@ import org.jellyfin.mobile.utils.toast
 import org.jellyfin.sdk.model.api.MediaSegmentDto
 import org.jellyfin.sdk.model.api.MediaStream
 import org.koin.android.ext.android.inject
+import timber.log.Timber
 import kotlin.math.max
 import androidx.media3.ui.R as Media3R
 
@@ -80,6 +81,7 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
     private val fullscreenSwitcher: ImageButton get() = playerControlsBinding.fullscreenSwitcher
     private var playerMenus: PlayerMenus? = null
     private var pictureFitHelper: PictureFitHelper? = null
+    private var brightnessBeforePictureInPicture: Float? = null
     private var trackChangeJob: Job? = null
 
     private lateinit var playerFullscreenHelper: PlayerFullscreenHelper
@@ -469,6 +471,25 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
         if (isInPictureInPictureMode) {
             playerMenus?.dismissPlaybackInfo()
             playerLockScreenHelper.hideUnlockButton()
+        }
+        updatePictureInPictureBrightness(isInPictureInPictureMode)
+    }
+
+    /**
+     * The player's brightness (the swipe gesture, or a remembered one) is set on the window, and in picture-in-picture
+     * that window is on top of everything, so it would set the whole screen's brightness - and with HDR on show, the
+     * whole screen stays HDR-bright. In picture-in-picture the system's brightness is used instead, as it is for every
+     * other app, and the player's brightness comes back with full screen.
+     */
+    private fun updatePictureInPictureBrightness(isInPictureInPictureMode: Boolean) {
+        val window = requireActivity().window
+        if (isInPictureInPictureMode) {
+            brightnessBeforePictureInPicture = window.brightness
+            Timber.d("Picture-in-picture: player brightness %.2f set aside", brightnessBeforePictureInPicture)
+            window.brightness = BRIGHTNESS_OVERRIDE_NONE
+        } else {
+            brightnessBeforePictureInPicture?.let { window.brightness = it }
+            brightnessBeforePictureInPicture = null
         }
     }
 
