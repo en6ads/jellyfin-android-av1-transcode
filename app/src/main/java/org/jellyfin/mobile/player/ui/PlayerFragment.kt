@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.LayoutInflater
 import android.view.OrientationEventListener
+import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
@@ -458,21 +459,33 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
 
     fun onFitToPictureChanged(enabled: Boolean) {
         appPreferences.exoPlayerFitToPicture = enabled
-        pictureFitHelper?.refresh()
+        if (AndroidVersion.isAtLeastN) pictureFitHelper?.refresh()
     }
 
     fun onZoomModeChanged() {
-        pictureFitHelper?.refresh()
+        if (AndroidVersion.isAtLeastN) pictureFitHelper?.refresh()
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean) {
         playerView.useController = !isInPictureInPictureMode
-        pictureFitHelper?.refresh()
+        if (AndroidVersion.isAtLeastN) pictureFitHelper?.refresh()
         if (isInPictureInPictureMode) {
             playerMenus?.dismissPlaybackInfo()
             playerLockScreenHelper.hideUnlockButton()
         }
         updatePictureInPictureBrightness(isInPictureInPictureMode)
+        updatePictureInPictureHdr(isInPictureInPictureMode)
+    }
+
+    /**
+     * In picture-in-picture, HDR is shown without its extra brightness, as SDR: the system brightens the whole screen
+     * for HDR, so a small HDR window would leave everything around it glaring. Full screen gets HDR back.
+     */
+    private fun updatePictureInPictureHdr(isInPictureInPictureMode: Boolean) {
+        if (!AndroidVersion.isAtLeastV) return
+        val surfaceView = playerView.videoSurfaceView as? SurfaceView ?: return
+        surfaceView.setDesiredHdrHeadroom(if (isInPictureInPictureMode) NO_HDR_HEADROOM else DEFAULT_HDR_HEADROOM)
+        Timber.d("Picture-in-picture: HDR headroom %s", if (isInPictureInPictureMode) "off" else "default")
     }
 
     /**
@@ -510,7 +523,7 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
 
     override fun onDestroyView() {
         super.onDestroyView()
-        pictureFitHelper?.stop()
+        if (AndroidVersion.isAtLeastN) pictureFitHelper?.stop()
         pictureFitHelper = null
 
         // Detach player from PlayerView
@@ -535,5 +548,10 @@ class PlayerFragment : Fragment(), BackPressInterceptor {
 
     fun setPlayerMenuHelper(menuHelper: PlayerMenuHelper) {
         viewModel.setPlayerMenuHelper(menuHelper)
+    }
+
+    private companion object {
+        const val NO_HDR_HEADROOM = 1f // SDR white is the brightest: HDR is shown as SDR
+        const val DEFAULT_HDR_HEADROOM = 0f // the system's choice
     }
 }

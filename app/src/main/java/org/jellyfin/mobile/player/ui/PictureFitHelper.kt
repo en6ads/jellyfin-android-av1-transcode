@@ -10,6 +10,7 @@ import android.view.PixelCopy
 import android.view.SurfaceView
 import android.view.View
 import androidx.annotation.RequiresApi
+import androidx.core.graphics.createBitmap
 import androidx.media3.common.Player
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -118,7 +119,7 @@ class PictureFitHelper(
         val copyHeight = (COPY_WIDTH * size.height / (size.width * size.pixelWidthHeightRatio)).roundToInt()
             .coerceIn(MIN_COPY_HEIGHT, COPY_WIDTH)
         val target = bitmap?.takeIf { it.height == copyHeight }
-            ?: Bitmap.createBitmap(COPY_WIDTH, copyHeight, Bitmap.Config.ARGB_8888).also {
+            ?: createBitmap(COPY_WIDTH, copyHeight).also {
                 bitmap?.recycle()
                 bitmap = it
             }

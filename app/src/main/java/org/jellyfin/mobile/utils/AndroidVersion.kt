@@ -81,4 +81,12 @@ object AndroidVersion {
      */
     inline val isAtLeastT: Boolean
         get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+
+    /**
+     * Checks whether the current Android version is at least Android 15 Vanilla Ice Cream, API 35.
+     *
+     * @see Build.VERSION_CODES.VANILLA_ICE_CREAM
+     */
+    inline val isAtLeastV: Boolean
+        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.VANILLA_ICE_CREAM
 }
